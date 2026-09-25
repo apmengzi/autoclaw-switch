@@ -17,3 +17,4 @@ pool_state.json
 request-headers.json
 .claim_schedule.json
 *.bak*
+_build.log
