@@ -1237,6 +1237,7 @@ td.st{color:var(--ink-mute);font-size:11.5px;white-space:nowrap}
     <label class="pill tog" title="登录型活动窗口期内逐号自动登录到账">
       <input type="checkbox" id="tgSweep" onchange="App.setSetting('auto_sweep', this.checked)"/> 活动打卡</label>
     <span id="autoPill" class="pill"><span id="autoText"></span></span>
+    <button class="sm ghost" id="langBtn" onclick="toggleLang()" title="Switch language">EN</button>
     <button class="sm ghost" onclick="App.sweep()" title="为每个账号在隔离窗口登录打卡">🎯 打卡</button>
     <button class="sm ghost" onclick="App.launchAc()">启动</button>
     <button class="sm ghost" onclick="App.relaySetup()" title="部署反代并注册到 ZCode（幂等）">⚡ 一键反代</button>
@@ -1292,6 +1293,162 @@ td.st{color:var(--ink-mute);font-size:11.5px;white-space:nowrap}
 </main></div>
 <div class="toast" id="toast"></div>
 <script>
+
+// ---------- i18n（zh/en）：渲染后文本节点翻译层 ----------
+// 范围：UI 骨架 + 账号卡 + 状态/toast；#log 保持后端原文（运维日志不翻）。
+// 两级：EXACT 精确匹配；PAT 正则（含变量的串）。
+const I18N_EN = {
+  "AutoClaw 多账号管理 · 每日签到领积分":"AutoClaw multi-account manager · daily check-in & rewards",
+  "积分":"pts", "检查中…":"checking…", "自动领取":"Auto claim",
+  "开启后每小时检测并领取一次":"Check and claim hourly when on",
+  "活动打卡":"Event check-in", "打卡":"Check-in",
+  "登录型活动窗口期内逐号自动登录到账":"During event windows, log in each account to collect",
+  "为每个账号在隔离窗口登录打卡":"Log in each account in an isolated window to check in",
+  "启动":"Launch", "⚡ 一键反代":"⚡ One-click relay",
+  "部署反代并注册到 ZCode（幂等）":"Deploy relay and register into ZCode (idempotent)",
+  "反代状态":"Relay status", "查看反代状态":"Show relay status",
+  "🔥 暖号":"🔥 Warm-up",
+  "新号建议点一次：8 轮真实对话建立用量基线":"Run once for new accounts: 8 real conversations to build a human-shaped usage baseline",
+  "账号":"Accounts", "⚡ 一键领取全部积分":"⚡ Claim all points",
+  "🎁 新人/活动积分":"🎁 Newbie/event points", "刷新":"Refresh",
+  "➕ 内置添加账号":"➕ Built-in add account",
+  "免桌面端：手机号验证码直接注册/登录并入档":"No desktop needed: register/login by SMS code and archive",
+  "🖥 桌面端登录添加":"🖥 Add via desktop login",
+  "打开 AutoClaw 官方登录窗口；桌面端在跑时自动让位，登录结束自动重启":"Opens the official login window; the running desktop steps aside and is restored afterwards",
+  "导入账号":"Import", "导出备份":"Export backup",
+  "📱 手机号":"📱 Phone", "11 位手机号":"11-digit phone", "发送验证码":"Send code",
+  "6 位码":"6-digit code", "登录并入档":"Login & archive", "收起":"Collapse",
+  "🔗 邀请码":"🔗 Invite code", "你的大号邀请码":"Invite code of your main account",
+  "保存":"Save", "从大号取码":"Fetch from main", "补绑未绑定账号":"Bind unbound accounts",
+  "复核奖励":"Audit rewards",
+  "只读核对：每个号绑给了谁、邀请人自己收到了多少":"Read-only audit: who each account is bound to, and what the invoker received",
+  "新添加的账号自动绑定；受邀号真实使用之后才计奖":"New accounts bind automatically; invitee rewards settle after real usage",
+  "操作日志":"Log", "就绪。":"Ready.",
+  "未发现 AutoClaw 账号":"No AutoClaw accounts found",
+  "点上方「➕ 内置添加账号」用手机号注册/登录，或「导入账号」从其它目录导入":"Use ➕ Built-in add above to register by phone, or Import from another directory",
+  "当前登录":"current", "凭证已失效 · 需重新登录":"credential expired · re-login needed",
+  "切换中 · 暂停探测":"switching · probing paused", "今日已领完":"claimed today",
+  "暂无任务下发":"no tasks", "可领":"claimable", "新人":"newbie", "每日":"daily",
+  "灵感":"inspiration", "活动":"event", "外部活动":"external", "活动预告":"upcoming",
+  "任务":"tasks", "状态":"status", "运行中":"running", "未运行":"not running",
+  "重新登录":"Re-login", "切换到此账号":"Switch to this account",
+  "个可领 · ":" claimable · ", " 分即将过期":" pts expiring soon",
+  " 项服务端未放行":" blocked server-side",
+  "组账号共用同一份设备身份（新人资格一台设备只算一次）":"accounts share one device identity (new-user bonus counted once per device)",
+  "个账号 · ":" accounts · ", "个任务可领 ":" tasks worth ",
+  "自动领取已开启":"Auto claim on", "自动领取已关闭":"Auto claim off",
+  "活动打卡已开启":"Event check-in on", "活动打卡已关闭":"Event check-in off",
+  "自动：已关闭":"Auto: off", "自动：启动中":"Auto: starting ",
+  "自动：引擎已停止（重启程序恢复）":"Auto: engine stopped (restart to recover)",
+  "自动：检测中…":"Auto: checking…", "自动：等手动领取结束":"Auto: waiting for manual claim",
+  "自动：等账号切换结束":"Auto: waiting for account switch", "自动：等登录结束":"Auto: waiting for login",
+  "自动：等打卡结束":"Auto: waiting for check-in", "自动：待命":"Auto: standby",
+  "自动：上轮未完成，":"Auto: last round unfinished, retry at ",
+  "自动：下次":"Auto: next ",
+  "（上轮 +":" (last round +", "）":")",
+  "一键反代：部署本地反代 + 把 AutoClaw 注册进 ZCode（幂等，可重复点）。继续？":"One-click relay: deploy local relay + register AutoClaw into ZCode (idempotent). Continue?",
+  "反代正常 · 云端直连，不用开桌面端":"Relay OK · direct cloud, desktop not needed",
+  "反代正常 · broker 已连接":"Relay OK · broker connected",
+  "反代当前不可用，重新部署并启动？":"Relay is down. Redeploy and start?",
+  "反代已重启":"Relay restarted", "重启失败：":"Restart failed: ",
+  "进行中，看操作日志":"In progress, see the log",
+  "对新号跑 8 轮真实对话建立用量基线（防止被判机器号）。继续？":"Run 8 real conversations for new accounts to build a usage baseline (avoids bot-flagging). Continue?",
+  "暖号进行中，看操作日志":"Warming up, see the log",
+  "领取中…":"Claiming…", "领取活动中…":"Claiming events…", "刷新中…":"Refreshing…",
+  "发送中…":"Sending…", "发码中…":"Sending code…", "切换中…":"Switching…",
+  "提交失败":"Submit failed", "发送失败":"Send failed", "保存失败":"Save failed",
+  "设置失败：":"Save setting failed: ", "导入失败：":"Import failed: ",
+  "导出失败：":"Export failed: ", "添加失败：":"Add failed: ",
+  "入档失败":"Archive failed", "启动失败：":"Launch failed: ",
+  "启动登录失败":"Login launch failed", "启动登录失败：":"Login launch failed: ",
+  "启动切换失败":"Switch launch failed", "启动切换失败：":"Switch launch failed: ",
+  "切换失败：":"Switch failed: ", "⚠ 切换失败：身份回跳到":"⚠ Switch failed: identity bounced to ",
+  "打卡失败：":"Check-in failed: ", "打卡完成":"Check-in done",
+  "无法开始打卡":"Cannot start check-in", "复核失败":"Audit failed",
+  "提交失败：":"Submit failed: ", "发送失败：":"Send failed: ",
+  "验证码是 6 位数字":"Code must be 6 digits", "验证码已发送":"Code sent",
+  "手机号得是 11 位中国大陆号码":"Phone must be an 11-digit mainland CN number",
+  "填手机号 → 发送验证码 → 登录并入档，全程不开桌面端。":"Phone -> send code -> login & archive. Desktop app stays closed.",
+  "正在校验验证码并入档…":"Verifying code and archiving…", "等待登录中…":"Waiting for login…",
+  "已启动 AutoClaw":"AutoClaw launched", "已添加账号":"Account added",
+  "已入档":"archived", "账号已导入":"Account imported", "已切换到":"Switched to ",
+  "该账号本来就是当前登录账号，未做改动":"Already the current account; nothing changed",
+  "老号已重新登录":"Existing account re-logged-in",
+  "已导出到":"Exported to ", "邀请码已保存：":"Invite code saved: ",
+  "开始补绑…":"Binding unbound accounts…", "活动/新人奖励请求已完成":"Event/newbie reward requests finished",
+  "活动打卡开始：将逐号拉起登录窗口（每号约 80 秒，不影响当前登录）":"Event check-in starting: one login window per account (~80s each, current login unaffected)",
+  "致命错误:\n":"Fatal error:\n", "失败：":"Failed: ", "未知":"unknown",
+  "切换账号会关闭并重启 AutoClaw，全程约 1 分钟（含身份回跳观察），确定继续？":"Switching closes and restarts AutoClaw, ~1 minute. Continue?",
+  "手机号":"Phone", "邀请码":"Invite code",
+  "（新铸身份 → 全新账号）":"(new identity -> brand-new account)",
+  "（沿用已有身份 → 老号重新登录）":"(existing identity -> re-login)",
+  "（观察期身份未回跳）":"(identity not bounced during observation)",
+  "，开始领取积分":", claiming points",
+  "未放行·":"blocked · ", "新人·":"newbie · ", "未下发":"not issued",
+  "暂无计奖（好友号要真实使用后才结算，可稍后再复核）":"No rewards settled yet (invitees count after real usage; re-audit later)",
+  "· 邀请码已绑定":"· invite bound",
+  "读取失败：":"Read failed: ",
+  "桌面端先让位，登录完会自动重启并校验算力":"Desktop steps aside first; it restarts automatically after login",
+};
+const I18N_EN_PAT = [
+  [/^凭证 (.+) 到期$/, (m)=>"credential expires " + m[1]],
+  [/^自动：下次 (.+)（上轮 \+(\d+)）$/, (m)=>"Auto: next " + m[1] + " (last round +" + m[2] + ")"],
+  [/^(\d+) 个可领 · (\d+) 分$/, (m)=>m[1] + " claimable · " + m[2] + " pts"],
+  [/^(\d+) 个账号 · (.+)$/, (m)=>m[1] + " accounts · " + m[2]],
+  [/^新人·(.+)$/, (m)=>"newbie · " + m[1]],
+  [/^未放行·(.+)$/, (m)=>"blocked · " + m[1]],
+  [/^预告·(.+) (.+)~(.+)$/, (m)=>"upcoming · " + m[1] + " " + m[2] + "~" + m[3]],
+  [/^(\d+) 分$/, (m)=>m[1] + " pts"],
+  [/^\+(\d+)分$/, (m)=>"+" + m[1] + " pts"],
+];
+function _i18nNode(n){
+  if(n.nodeType===3){
+    const t=n.textContent; if(!t||!/[一-鿿]/.test(t)) return;
+    let v=t.trim();
+    if(I18N_EN[v]!==undefined){ n.textContent=t.replace(v,I18N_EN[v]); return; }
+    const v2=v.replace(/^[^一-鿿]+/,"");   // 剥掉 emoji/符号前缀再试（🎯 打卡 等）
+    if(v2 && I18N_EN[v2]!==undefined){ n.textContent=t.replace(v,I18N_EN[v2]); return; }
+    for(const [re,fn] of I18N_EN_PAT){
+      const m=v.match(re);
+      if(m){ n.textContent=t.replace(v,fn(m)); return; }
+    }
+    return;
+  }
+  if(n.nodeType===1){
+    if(n.id==="log"){                              // 后端日志保持原文；仅静态占位翻
+      if(LANG==="en" && n.textContent.trim()==="就绪。") n.textContent="Ready.";
+      return;
+    }
+    if(n.tagName==="INPUT"){
+      if(n.dataset.phEn===undefined) n.dataset.phEn=n.placeholder;
+      const ph=n.dataset.phEn;
+      if(/[一-鿿]/.test(ph)){
+        const v=ph.trim();
+        if(I18N_EN[v]!==undefined) n.placeholder=I18N_EN[v];
+      }
+      return;
+    }
+    for(const c of n.childNodes) _i18nNode(c);
+    if(n.title && I18N_EN[n.title]) n.title=I18N_EN[n.title];
+  }
+}
+let LANG = localStorage.getItem("asw_lang") || "zh";
+function applyLang(){
+  document.documentElement.lang = LANG==="en" ? "en" : "zh-CN";
+  if(LANG==="en") _i18nNode(document.body);
+  const b=document.getElementById("langBtn");
+  if(b) b.textContent = LANG==="en" ? "中" : "EN";
+}
+function toggleLang(){
+  LANG = LANG==="en" ? "zh" : "en";
+  localStorage.setItem("asw_lang", LANG);
+  if(LANG==="en") applyLang(); else location.reload();   // 回中文：整页重载最干净
+}
+// 渲染出的动态内容也要翻
+let _i18nBusy=false;
+new MutationObserver(()=>{ if(LANG==="en" && !_i18nBusy){ _i18nBusy=true; try{ _i18nNode(document.body); } finally { _i18nBusy=false; } } })
+  .observe(document.body,{childList:true,subtree:true});
+
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let LAST_TOTAL=null;
@@ -1304,6 +1461,7 @@ function setLog(lines){ if(!Array.isArray(lines))return;
 
 const App={
   async boot(){
+    applyLang();
     const d=await window.pywebview.api.bootstrap();
     this.render(d);
     this.startPoll();

@@ -47,6 +47,7 @@ from pathlib import Path
 
 # ---------------- AutoClaw 常量（逆向自 app.asar 1.17.8） ----------------
 APP_ID = "100003"
+RELAY_PORT = int(os.environ.get("AUTOCLAW_RELAY_PORT") or 18766)  # 本地反代（一键反代部署）
 APP_KEY = "38d2391985e2369a5fb8227d8e6cd5e5"
 BASE = "https://autoglm-api.autoglm.ai"
 TASK_LIST = "/autoclaw-proxy/proxy/autoclaw-task-list"
@@ -1433,7 +1434,12 @@ def _safe_json(raw: bytes) -> dict:
 
 def _api_request(method: str, path: str, body=None, token: str = "",
                  channel: str = "zai", timeout: int = 25, base: str = BASE) -> tuple:
-    """注册/登录阶段还没有 Account 可加载，用这套等价的公共头直连。"""
+    """注册/登录阶段还没有 Account 可加载，用这套等价的公共头直连。
+
+    2026-09-26：上游对本机出口间歇性 RST 非 node 指纹的 TLS（python 全挂）。
+    直连失败（st=0）改走本地反代 /fwd 桥（node 出站 + 4 次重试）——人机验证配置、
+    发验证码、登录这些注册链路全靠它，断了就是 GUI 上"Captcha instance timed out"。
+    """
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(base + path, data=data, method=method,
                                  headers=auth_headers(token, channel))
@@ -1446,7 +1452,31 @@ def _api_request(method: str, path: str, body=None, token: str = "",
         except Exception:
             return e.code, {"code": -1, "msg": f"HTTP {e.code}", "data": None}
     except Exception as e:
+        st2, d2 = _api_via_bridge(method, path, auth_headers(token, channel), body,
+                                  max(timeout, 90))
+        if st2 is not None:
+            return st2, d2
         return 0, {"code": -1, "msg": f"{type(e).__name__}: {e}", "data": None}
+
+
+def _api_via_bridge(method: str, path: str, headers: dict, body, timeout: float):
+    """经本地反代 /fwd 转发（loopback HTTP -> node TLS 出站）。桥不可用返回 (None, None)。"""
+    try:
+        payload = {"method": method, "path": path, "headers": headers, "body": body}
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{RELAY_PORT}/fwd",
+            data=json.dumps(payload).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        st = data.get("status", 0)
+        raw = data.get("body", "")
+        try:
+            return st, _safe_json(raw.encode("utf-8") if isinstance(raw, str) else raw)
+        except Exception:
+            return st, raw
+    except Exception:
+        return None, None
 
 
 def _dpapi_protect(data: bytes) -> bytes:
@@ -3774,7 +3804,7 @@ if __name__ == "__main__":
 # 链路：AutoClaw 登录态 → relay(本地 node 反代) → ZCode(anthropic-messages provider)。
 # 防封三原则写死在 relay 里：零固定节奏出站、三闸（限速/并发/输入）、新号暖号闸门。
 
-RELAY_PORT = 18766
+RELAY_PORT = int(os.environ.get("AUTOCLAW_RELAY_PORT") or 18766)
 RELAY_TOKEN = "autoclaw-local"
 ZCODE_PROVIDER_ID = "autoclaw-glm-provider"
 ZCODE_PROVIDER_NAME = "AutoClaw"
