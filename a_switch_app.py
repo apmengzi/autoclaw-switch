@@ -1255,9 +1255,9 @@ td.st{color:var(--ink-mute);font-size:11.5px;white-space:nowrap}
         <button class="sm ghost" onclick="App.refresh()">刷新</button>
       </div>
       <div>
-        <button class="primary" id="btnHeadlessAdd" onclick="App.openAdd()"
-                title="免桌面端：手机号验证码直接注册/登录并入档">➕ 内置添加账号</button>
-        <button class="sm ghost" id="btnLoginAdd" onclick="App.loginAdd()"
+        <!-- 内置添加账号（手机号直连注册）已下线：非官方客户端调用、上游风控收紧后价值不大。
+             桌面端登录添加是实测稳定路径，升为主按钮。手机号面板与 JS 保留休眠，需要时可恢复。 -->
+        <button class="primary" id="btnLoginAdd" onclick="App.loginAdd()"
                 title="打开 AutoClaw 官方登录窗口；桌面端在跑时自动让位，登录结束自动重启">🖥 桌面端登录添加</button>
         <button class="sm ghost" onclick="App.addAcct()">导入账号</button>
         <button class="sm ghost" onclick="App.exportAccts()">导出备份</button>
