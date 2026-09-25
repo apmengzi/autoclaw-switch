@@ -1,0 +1,19 @@
+# 运行时/私密数据，绝不入库
+accounts/
+dist/
+build/
+__pycache__/
+*.log
+*.exe
+*.etl
+*.pcapng
+*.token
+*_token.txt
+aswitch_settings.json
+aswitch_cloud_pool.json
+aswitch_pool_banned.json
+pool_state.json
+.request-headers.json
+request-headers.json
+.claim_schedule.json
+*.bak*
