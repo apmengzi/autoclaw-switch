@@ -2,6 +2,8 @@
 
 [English](README.en.md) | [中文](README.md)
 
+**Download exe**: [Releases · A-SWITCH.exe](../../releases/latest) (no Python needed)
+
 Multi-account manager for AutoClaw, bundled with a local relay that turns your AutoClaw credits into models you can pick directly inside ZCode.
 
 Three things it does:

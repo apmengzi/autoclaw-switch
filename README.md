@@ -2,6 +2,8 @@
 
 [中文](README.md) | [English](README.en.md)
 
+**下载exe**：[Releases · A-SWITCH.exe](../../releases/latest) （无需装 Python）
+
 AutoClaw 的多账号管理工具，附带一个本地反代，能把 AutoClaw 账号的积分变成 ZCode 里可以直接选用的模型。
 
 做了三件事：
