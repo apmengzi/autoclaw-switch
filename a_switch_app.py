@@ -755,6 +755,13 @@ class Api:
         st["log"] = _log_lines[-120:]
         return st
 
+    def ac_running(self):
+        """AutoClaw 桌面端当前是否在跑（点击加号时的新鲜检测，不用轮询缓存）。"""
+        try:
+            return {"ok": True, "running": bool(a_switch.autoclaw_running())}
+        except Exception as e:
+            return {"ok": False, "running": False, "error": str(e)}
+
     def login_add(self, timeout: int = 300):
         """官方登录窗口加号：桌面端在跑时先让它让位，完事无论成败都重启并回查反代。
 
@@ -1734,6 +1741,14 @@ const App={
   async loginAdd(){
     const btn = $("#btnLoginAdd");
     if(!btn || btn.disabled) return;
+    // 加号会让位（=关闭）桌面端：点下去之前先新鲜检测一次，在跑就弹确认
+    try{
+      const ac=await window.pywebview.api.ac_running();
+      if(ac && ac.ok && ac.running &&
+         !confirm(LANG==="en"
+           ? "AutoClaw is running. Continuing will close the desktop app (tray included); it restarts automatically after login. Don't reopen it manually meanwhile. Continue?"
+           : "检测到 AutoClaw 正在运行。继续添加会先关闭桌面端（含托盘），登录完成后会自动重启，期间请勿手动打开 AutoClaw。确定继续？")) return;
+    }catch(e){}
     let r;
     try{ r=await window.pywebview.api.login_add(); }
     catch(e){ toast("启动登录失败："+e); return; }
