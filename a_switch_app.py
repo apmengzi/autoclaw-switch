@@ -1455,7 +1455,20 @@ function _i18nNode(n){
     if(n.title && I18N_EN[n.title]) n.title=I18N_EN[n.title];
   }
 }
-let LANG = localStorage.getItem("asw_lang") || "zh";
+// pywebview 6.x 用 html= 直载页面时 localStorage 会被 WebView2 安全策略拒绝
+// （SecurityError: Access is denied for this document），顶层裸访问会把整个
+// 脚本打断、App 永远定义不出来 → 全页按钮死掉、停在"检查中"。这里包一层，
+// localStorage 不可用时降级为内存存储（代价只是语言偏好不跨会话记住）。
+const _store = (() => {
+  try { localStorage.setItem("__asw_t", "1"); localStorage.removeItem("__asw_t"); return localStorage; }
+  catch (e) {
+    const m = new Map();
+    return { getItem: k => m.has(k) ? m.get(k) : null,
+             setItem: (k, v) => m.set(k, String(v)),
+             removeItem: k => m.delete(k) };
+  }
+})();
+let LANG = _store.getItem("asw_lang") || "zh";
 function applyLang(){
   document.documentElement.lang = LANG==="en" ? "en" : "zh-CN";
   if(LANG==="en") _i18nNode(document.body);
@@ -1464,7 +1477,7 @@ function applyLang(){
 }
 function toggleLang(){
   LANG = LANG==="en" ? "zh" : "en";
-  localStorage.setItem("asw_lang", LANG);
+  _store.setItem("asw_lang", LANG);
   if(LANG==="en") applyLang(); else location.reload();   // 回中文：整页重载最干净
 }
 // 渲染出的动态内容也要翻
