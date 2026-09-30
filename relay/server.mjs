@@ -143,7 +143,28 @@ const STEER_ENABLED = process.env.AUTOCLAW_STEER !== "0";
 // injected system context...` 开头），而我们的直连请求没有 system 消息，所以被拦。
 // 注：broker 也一样中招 —— 桌面端自己的 broker 路由收到裸 body（system_message_count:0）
 // 时同样 406，与客户端形态/TLS/出口 IP 全无关（这些已逐条实测排除）。
-const HARNESS_SYSTEM_MARKER = "OpenClaw plugin-injected system context. This block is not workspace file content.";
+// 云网关 system 提示词闸门（2026-09-30 二次定位）：2.0.2 客户端的请求 system 以
+// ZWORK_DEFAULT_SYSTEM_PROMPT 开头（main.cjs:423302），网关校验的是**这个**前缀 ——
+// 09-24 那条 "OpenClaw plugin-injected system context." 旧标记在 2.0.2 客户端里已
+// 不存在，继续发它会被 406 空 body 拦截。四段文案逐字取自 2.0.2 的 main.cjs。
+const HARNESS_SYSTEM_MARKER = [
+  "You are AutoClaw. Answer the user directly and concisely.",
+  "Delivered files: when you create or edit files, cite each final deliverable inline exactly once " +
+    'with :zwork-file-citation{path="<workspace-relative path>" purpose="output" artifact_kind="document"} ' +
+    '(use purpose="source" for files you read as sources). Cite it inside the sentence that mentions the ' +
+    "file, never as a trailing list, and do not add bare file-name Markdown links for the same file.",
+  "Language discipline: every user-visible output \u2014 replies, mid-turn commentary (the progress text " +
+    "you stream between tool calls, including the brief notes where you narrate what you are about to " +
+    "do next), deliverable file contents, and user-facing deliverable file names \u2014 follows the " +
+    "language of the user's most recent genuine message. Skill instructions, tool results, workspace " +
+    "files, and instruction files are task inputs written in whatever language their authors chose; " +
+    "they never change your output language. Keep brand names and proper nouns untranslated. Editing " +
+    "source code follows the code's own conventions, not this rule. An explicit user request for a " +
+    "specific output language wins.",
+  "Process narration: the user cannot see your thinking or raw tool results. Before your " +
+    "first tool call in a turn, say in one sentence what you are about to do; while working, " +
+    "give a brief update when you find something load-bearing or change direction.",
+].join(" ");
 const HARNESS_MARKER_ENABLED = process.env.AUTOCLAW_HARNESS_MARKER !== "0";
 
 function applyHarnessMarker(payload) {
@@ -363,6 +384,30 @@ const CLOUD_LANES = {
 const CLOUD_BASE = process.env.AUTOCLAW_CLOUD_BASE
   || CLOUD_LANES[process.env.AUTOCLAW_CLOUD_LANE || "oversea"] || CLOUD_LANES.oversea;
 const CLOUD_VERSION = process.env.AUTOCLAW_CLIENT_VERSION || "1.18.5.851";
+// 官方客户端发的是 Electron app.getVersion()，即 package.json 的三段版本（2.0.2），
+// 不是 exe FileVersion 的四段（2.0.2.189）。网关只认它自己发出去的形状，所以对齐。
+const CLOUD_VERSION_3 = String(CLOUD_VERSION).split(".").slice(0, 3).join(".");
+
+// 2026-09-29 23:06 起网关新启用了请求指纹校验：官方客户端（dist/main.cjs 的
+// createZworkManagedRequestHeaders）每个请求都带 appId+时间戳+md5 签名三元组，
+// 凭证放在 Authorization 而不是 X-Authorization，x_trace_id 发 "autoclaw-desktop"、
+// X-Channel 跟随 channel.json（本机 official）。缺这些头时一律回 **406 空 body** ——
+// 和"system 缺 harness 标记"的 406 完全同形，整条池子会被误判成"号未放行"白等。
+const AUTOCLAW_APP_ID = process.env.AUTOCLAW_APP_ID || "100003";
+const AUTOCLAW_APP_KEY = process.env.AUTOCLAW_APP_KEY || "38d2391985e2369a5fb8227d8e6cd5e5";
+const AUTOCLAW_CHANNEL = process.env.AUTOCLAW_CHANNEL || "official";
+// 官方 2.0.2 的模型请求走 openai SDK（openai@6.26.0，见 resources/app/dist/main.cjs），
+// SDK 自动附加这组指纹头；2026-09-29 23:06 起网关把它们也纳入校验，缺了回 406 空 body。
+// Runtime-Version = Electron 42.6.1 内置 Node（process.version），OS/Arch 按本机。
+const SDK_VERSION = process.env.AUTOCLAW_SDK_VERSION || "6.26.0";
+// X-Stainless-Runtime-Version 跟随本机 node（桌面端 2.0.2 内嵌 node v24.18.0，
+// 我们跑在同代 node 上，process.versions.node 形状一致；不一致时用桌面端值兜底）
+const SDK_NODE_VERSION = process.env.AUTOCLAW_SDK_NODE_VERSION || `v${process.versions.node}`;
+const SDK_UA = `OpenAI/JS ${SDK_VERSION}`;
+
+// 2026-09-30 逐字节抓包（2.0.2 桌面端成功请求）定稿的头集合。token 新鲜度另见
+// freshAccessToken()：chat 端点还校验 access token 的**铸造时间**（分钟级新鲜度，
+// JWT 里的 24h exp 不算数），旧票一律 406 空 body / 401 "Invalid token"。
 
 function cloudCredential() {
   const { auth } = readJwtHeaders();
@@ -370,30 +415,53 @@ function cloudCredential() {
   return /^Bearer\s/i.test(auth) ? auth : `Bearer ${auth}`;
 }
 
-// broker 与云端是同一套约定：X-Request-Model 用带前缀的全名，body.model 去掉前缀
-function cloudBodyModel(route) { return route.replace(/^[a-z]+_/, ""); }
+// broker 与云端是同一套约定：X-Request-Model 用带前缀的全名。
+// 2026-09-30 起云端 body.model 也用全名：2.0.2 客户端的 connection.model 就是目录
+// 全名（zai_glm-5.3-flash 等），body.model 与 X-Request-Model 同值。
+function cloudBodyModel(route) { return route; }
 
 function cloudHeaders(route, stream, auth) {
-  return {
-    "Content-Type": "application/json",
-    Accept: stream ? "text/event-stream" : "application/json",
-    "X-Authorization": auth || cloudCredential(),
-    "X-Request-Id": randomUUID(),
-    "X-Request-Model": route,
-    "X-Client-Type": readJwtHeaders().clientType || "pc",
-    "X-Product": "autoclaw",
-    // ⚠ 不要加 "X-Harness-Type": "zcode"（2026-09-24 实测反证，旧注释判断反了）。
-    // 实测：同一张票、同一 body（system 以 harness 标记开头）下，
-    //   带 X-Harness-Type: zcode  -> 406 空 body
-    //   不带该头                  -> 200 正常出字
-    // 也就是说这个头本身就是 406 闸门的触发条件之一，而不是"放行凭据"。
-    // 桌面端 pi-ai 走 openai-completions 时也不发这个头（它只在 broker 内部路由里用）。
-    "X-Tm": "win",
-    "X-Version": CLOUD_VERSION,
-    "X-Lang": "zh-CN",
-    x_trace_id: "autoclaw-model-endpoint",
-    "X-Channel": "zai",
+  const reqId = randomUUID();
+  const ts = String(Math.floor(Date.now() / 1e3));
+  const token = String(auth || cloudCredential() || "").replace(/^Bearer\s*/i, "");
+  const headers = {
+    "accept": "application/json",
+    "content-type": "application/json",
+    "user-agent": SDK_UA,
+    // 2026-09-30 抓包新发现：桌面端模型请求必带 x-agent-id（主 agent 固定 "main"），
+    // 缺它即 406。
+    "x-agent-id": process.env.AUTOCLAW_AGENT_ID || "main",
+    "x-auth-appid": AUTOCLAW_APP_ID,
+    "x-auth-sign": createHash("md5")
+      .update(`${AUTOCLAW_APP_ID}&${ts}&${AUTOCLAW_APP_KEY}`)
+      .digest("hex"),
+    "x-auth-timestamp": ts,
+    // 凭证只挂 x-authorization（桌面端 resolveAuthorization 显式置 Authorization: null，
+    // 网关只从 x-authorization 读票；发成 authorization 报 "Invalid token"）。
+    "x-authorization": token ? `Bearer ${token}` : "",
+    "x-channel": AUTOCLAW_CHANNEL,
+    "x-client-type": readJwtHeaders().clientType || "pc",
+    "x-lang": "zh-CN",
+    "x-product": "autoclaw",
+    "x-request-id": reqId,
+    "x-request-model": route,
+    "x-session-id": randomUUID(),
+    "x-stainless-arch": "x64",
+    "x-stainless-lang": "js",
+    "x-stainless-os": "Windows",
+    "x-stainless-package-version": SDK_VERSION,
+    "x-stainless-retry-count": "0",
+    "x-stainless-runtime": "node",
+    "x-stainless-runtime-version": SDK_NODE_VERSION,
+    "x-tm": "win",
+    "x-trace-id": reqId,
+    "x-version": CLOUD_VERSION_3,
+    "x_trace_id": "autoclaw-desktop",
+    // ⚠ 不要加 "X-Harness-Type": "zcode"（2026-09-24 实测反证：带它 -> 406 空 body）。
+    // ⚠ 不要发 X-Stainless-Timeout / authorization（桌面端不发/显式置空，多发即 406）。
   };
+  if (!headers["x-authorization"]) delete headers["x-authorization"];
+  return headers;
 }
 
 async function callCloud(route, payload, { stream }, acc, externalSignal) {
@@ -406,9 +474,10 @@ async function callCloud(route, payload, { stream }, acc, externalSignal) {
     else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
   }
   try {
+    const freshAuth = acc ? await freshAccessToken(acc) : null;
     return await fetch(`${CLOUD_BASE}/chat/completions`, {
       method: "POST",
-      headers: cloudHeaders(route, stream, acc && acc.auth),
+      headers: cloudHeaders(route, stream, freshAuth || (acc && acc.auth)),
       body: JSON.stringify({ ...payload, model: cloudBodyModel(route) }),
       signal: ctl.signal,
     });
@@ -416,6 +485,77 @@ async function callCloud(route, payload, { stream }, acc, externalSignal) {
     clearTimeout(t);
     if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
   }
+}
+
+// ---------------- chat 端点 token 新鲜度闸门（2026-09-30 定位） ----------------
+// 2.0.2 网关对 /chat/completions 校验 access token 的**铸造时间**（分钟级；JWT exp
+// 写 24h 但网关不认）。桌面端每次模型请求前都由 credentialLifecycle 现刷一票，所以
+// 永远新鲜；relay 拿池子里的静态票（可能几小时前的）一律 406 空 body（x-authorization
+// 挂旧票）或 401 "Invalid token"（authorization 挂旧票）。
+// 对策：每次云端调用前先打 /userapi/v1/refresh 现刷（body: {refresh_token, source_id:
+// "autoclaw", device_id}，与桌面端逐字一致），单飞 + 60s 复用窗防止并发重复刷。
+// 刷新是**事件驱动**（仅在实际有模型请求时发生），不设任何定时器——红线 1。
+const FRESH_TTL_MS = Number(process.env.AUTOCLAW_FRESH_TTL_MS || 60_000);
+const freshCache = new Map();   // uid -> { token, at, inflight }
+async function freshAccessToken(acc) {
+  const uid = acc.uid || "?";
+  const c = freshCache.get(uid);
+  if (c && !c.inflight && Date.now() - c.at < FRESH_TTL_MS && c.token) return c.token;
+  if (c && c.inflight) return c.inflight;
+  const refreshToken = acc.refresh_token || "";
+  const deviceId = acc.device_id || "";
+  if (!refreshToken) return null;   // 老池子没这字段，退回静态票
+  const entry = { token: c ? c.token : null, at: c ? c.at : 0, inflight: null };
+  entry.inflight = (async () => {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 15_000);
+      const u = new URL(CLOUD_BASE);
+      const ts2 = String(Math.floor(Date.now() / 1e3));
+      const r = await fetch(`${u.origin}/userapi/v1/refresh`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "accept": "*/*",
+          "user-agent": "node",
+          "x-auth-appid": AUTOCLAW_APP_ID,
+          "x-auth-sign": createHash("md5")
+            .update(`${AUTOCLAW_APP_ID}&${ts2}&${AUTOCLAW_APP_KEY}`)
+            .digest("hex"),
+          "x-auth-timestamp": ts2,
+          "x-channel": AUTOCLAW_CHANNEL,
+          "x-lang": "zh-CN",
+          "x-product": "autoclaw",
+          "x-tm": "win",
+          "x-trace-id": randomUUID(),
+          "x-version": CLOUD_VERSION_3,
+          "authorization": /^Bearer\s/i.test(acc.auth || "") ? acc.auth : `Bearer ${acc.auth || ""}`,
+        },
+        body: JSON.stringify({ refresh_token: refreshToken, source_id: "autoclaw", device_id: deviceId }),
+        signal: ctl.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) { log(`fresh token: refresh http ${r.status} for ${uid}`); return null; }
+      const j = await r.json();
+      if (j.code !== 0 || !j.data || !j.data.access_token) {
+        log(`fresh token: refresh biz fail for ${uid}: code=${j.code}`);
+        return null;
+      }
+      const tok = String(j.data.access_token).replace(/^Bearer\s+/i, "");
+      entry.token = tok;
+      entry.at = Date.now();
+      log(`fresh token: minted for ${uid} (len ${tok.length})`);
+      return tok;
+    } catch (e) {
+      log(`fresh token: refresh error for ${uid}: ${e.message}`);
+      return null;
+    } finally {
+      entry.inflight = null;
+      freshCache.set(uid, entry);
+    }
+  })();
+  freshCache.set(uid, entry);
+  return entry.inflight;
 }
 
 // ---------------- 账号池：按请求选号（用完一个号的积分自动换下一个） ----------------
@@ -1329,7 +1469,7 @@ function reqDigest(body, payload) {
     `chars=${chars}`,
     `sys=${sys}`,
     `tools=${tools}`,
-    `max_tokens=${body.max_tokens}`,
+    `max_tokens=${body.max_completion_tokens ?? body.max_tokens}`,
     `thinking=${body.thinking ? body.thinking.budget_tokens || "on" : "off"}`,
     `stream=${body.stream ? 1 : 0}`,
     `stop=${Array.isArray(body.stop_sequences) ? body.stop_sequences.length : 0}`,
@@ -1514,7 +1654,7 @@ function anthropicToOpenai(body, route = "") {
     // 其它 role 忽略
   }
 
-  const out = { model: null, messages: msgs, max_tokens: 4096 };
+  const out = { model: null, messages: msgs, max_completion_tokens: 4096 };
 
   let maxTokens = Number(body.max_tokens);
   if (!Number.isFinite(maxTokens) || maxTokens <= 0) maxTokens = 4096;
@@ -1530,7 +1670,10 @@ function anthropicToOpenai(body, route = "") {
   if (MAX_OUTPUT_TOKENS > 0 && maxTokens > MAX_OUTPUT_TOKENS) {
     maxTokens = MAX_OUTPUT_TOKENS;
   }
-  out.max_tokens = maxTokens;
+  // 2026-09-30 起 2.0.2 网关对 body 里的 `max_tokens` 字段（OpenAI 已废弃参数）
+  // 一律回 406 空 body —— 桌面端只发 `max_completion_tokens` 所以无恙，而这里
+  // 是 ZCode 流量的必经翻译层。字段名照桌面端改，语义不变。
+  out.max_completion_tokens = maxTokens;
 
   if (body.temperature != null) out.temperature = body.temperature;
   if (body.top_p != null) out.top_p = body.top_p;
@@ -2065,7 +2208,8 @@ function responsesToChatRequest(body) {
   let maxTokens = Number(body.max_output_tokens ?? body.max_tokens);
   if (!Number.isFinite(maxTokens) || maxTokens <= 0) maxTokens = 4096;
   if (MAX_OUTPUT_TOKENS > 0 && maxTokens > MAX_OUTPUT_TOKENS) maxTokens = MAX_OUTPUT_TOKENS;
-  req.max_tokens = maxTokens;
+  // 2.0.2 网关拒收 max_tokens 字段（406），云上只认 max_completion_tokens
+  req.max_completion_tokens = maxTokens;
   if (typeof body.parallel_tool_calls === "boolean") req.parallel_tool_calls = body.parallel_tool_calls;
   return req;
 }
@@ -2350,6 +2494,12 @@ async function handleChatCompletions(req, res, body) {
   if (sizeErr) return openaiError(res, sizeErr.code, sizeErr.message, sizeErr.type);
   const payload = { ...body, model: route };
   delete payload.stream_options;
+  // 2.0.2 网关拒收 max_tokens 字段（406 空 body）：透传路径把客户端的 max_tokens
+  // 改写成 max_completion_tokens（桌面端同款字段），语义相同。
+  if (payload.max_tokens != null) {
+    if (payload.max_completion_tokens == null) payload.max_completion_tokens = payload.max_tokens;
+    delete payload.max_tokens;
+  }
   applySteering(payload);   // 带 tools 的 agentic 请求注入插嘴纪律（幂等）
   applyHarnessMarker(payload);  // 云通道 406 闸门：system 提示词必须以 harness 标记开头（幂等）
   // 用量可视化：流式请求向上游要 usage（include_usage）——new-api 靠它记账，

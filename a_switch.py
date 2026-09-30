@@ -1136,10 +1136,31 @@ def _autoclaw_roots():
     roots.append(Path.home() / "AppData" / "Local" / "AutoClaw")
     return roots
 
-AUTOCLAW_EXE_CANDIDATES = [r / "AutoClaw.exe" for r in _autoclaw_roots()]
+AUTOCLAW_EXE_CANDIDATES = [r / "AutoClaw.exe" for r in _autoclaw_roots()] \
+                        + [r / "AutoClaw2.exe" for r in _autoclaw_roots()]
+
+
+def _running_autoclaw_exes():
+    """从正在运行的进程里找 AutoClaw*.exe 的真实路径。
+
+    客户端可能装在目录扫描覆盖不到的地方（本机就在 D:\\APP\\code\\autoclaw\\AutoClaw2\\），
+    而运行中的进程路径是权威来源，且不做任何网络请求。
+    """
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-Process AutoClaw* -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path"],
+            capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return []
+    return [Path(p) for p in (l.strip() for l in out.splitlines()) if p.lower().endswith(".exe")]
 
 
 def find_autoclaw_exe() -> Path | None:
+    for p in _running_autoclaw_exes():
+        if p.is_file():
+            return p
     for p in AUTOCLAW_EXE_CANDIDATES:
         if p.is_file():
             return p
@@ -3005,6 +3026,11 @@ def export_cloud_pool(entries: list) -> dict:
             "uid": str(a.user_id or a.appdata_dir.name),
             "name": a.nickname,
             "auth": tok if tok.lower().startswith("bearer ") else f"Bearer {tok}",
+            # 2026-09-30 起 2.0.2 网关对 chat 端点校验 token 新鲜度（分钟级，尽管 JWT
+            # 写 24h），relay 必须在每次模型请求前现刷一票；refresh_token+device_id
+            # 是刷票的原料，与 access token 同级明文落盘（同 request-headers.json 风险）。
+            "refresh_token": getattr(a, "refresh_token", "") or "",
+            "device_id": getattr(a, "device_id", "") or "",
             "access_expires_at": exp,
             "points": e.get("points"),
             "expiring": e.get("expiring"),
@@ -3919,8 +3945,11 @@ ZCODE_BASE_URL = f"http://127.0.0.1:{RELAY_PORT}"
 # (ZCode 显示名, route, 支持视觉, contextWindow) —— 视觉矩阵来自逐路由实测
 ZCODE_MODELS = [
     ("GLM-5.3",             "zaicoding_glm-5.3",              False, 500000),
-    ("Deepseek-V4.1-Flash", "tdpsk_deepseek-v4-flash-202605", True,  500000),
-    ("DeepSeek-V4-Pro",     "tdpsk_deepseek-v4-pro-202606",   False, 500000),
+    # 2026-09-29 起本机账号的模型目录里 tdpsk_deepseek-* 两条被上游移除
+    # （runtime/model-catalog/remote-snapshot.json 只剩 4 个模型），请求回 400 非法模型。
+    # 权益恢复后把下面两行加回来即可：
+    # ("Deepseek-V4.1-Flash", "tdpsk_deepseek-v4-flash-202605", True,  500000),
+    # ("DeepSeek-V4-Pro",     "tdpsk_deepseek-v4-pro-202606",   False, 500000),
     ("GLM-5.3-Flash",       "zai_glm-5.3-flash",              True,  500000),
     ("Auto",                "zai_auto",                       True,  500000),
     ("Auto-Fast",           "zai_auto-fast",                  True,  500000),
@@ -3976,6 +4005,7 @@ def write_single_credential() -> bool:
 
 
 def relay_start() -> dict:
+    import subprocess
     node = find_node_exe()
     if not node:
         return {"ok": False, "error": "找不到 node.exe（AutoClaw 安装目录或系统 PATH）"}
@@ -3983,6 +4013,12 @@ def relay_start() -> dict:
     write_single_credential()
     logf = open(relay_home() / "relay.log", "ab")
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    # X-Version 必须跟随本机真实客户端（2.0.2 起上游对旧版本号回 406 空响应体，
+    # 和缺 harness 标记的表现完全一样，极易误判成"账号未放行"）。relay 启动时
+    # 读 AUTOCLAW_CLIENT_VERSION，默认 1.18.5.851 已经过时。
+    ver = detect_autoclaw_version()
+    if ver:
+        os.environ["AUTOCLAW_CLIENT_VERSION"] = ver
     subprocess.Popen([str(node), str(server)], cwd=str(relay_home()),
                      stdout=logf, stderr=subprocess.STDOUT,
                      creationflags=flags)
@@ -4021,7 +4057,8 @@ def zcode_register_provider() -> dict:
             "config": {"group": "standard-personal",
                        "access": {"type": "api-key", "apiKey": RELAY_TOKEN},
                        "api": {"type": "anthropic-messages", "baseUrl": ZCODE_BASE_URL},
-                       "personalModelIds": [m[0] for m in ZCODE_MODELS]}}
+                       "personalModelIds": [m[0] for m in ZCODE_MODELS],
+                       "modelOrder": [m[0] for m in ZCODE_MODELS]}}
     rules = conf.setdefault("providerConfigRules", {}).setdefault("providerRules", [])
     rules[:] = [r for r in rules if r.get("providerId") != ZCODE_PROVIDER_ID]
     rules.append(rule)
@@ -4037,7 +4074,10 @@ def zcode_register_provider() -> dict:
                                               "inputFormat": {"supportsText": True, "supportsImage": image,
                                                               "supportsVideo": False, "supportsAudio": False,
                                                               "supportsPdf": False},
-                                              "outputFormat": {"supportsText": True}}}})
+                                              "outputFormat": {"supportsText": True}},
+                               # ZCode 选模型时默认挂 $max 思考档位；不声明 values 会在
+                               # 会话恢复时校验失败（sessionModelUnavailable）被回退成默认供应商
+                               "optionSpecs": {"reasoningLevel": {"values": ["low", "high", "max"]}}}})
     cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True, "models": [m[0] for m in ZCODE_MODELS]}
 
@@ -4116,8 +4156,13 @@ def warm_unwarmed_accounts(rounds: int = 8) -> dict:
         if st.get("warmed") is True:
             continue
         tokf = home / "warm" / f".warm_{str(acc.user_id)[:8]}.token"
-        tokf.write_text(acc.token if str(acc.token).lower().startswith("bearer ") else f"Bearer {acc.token}",
-                        encoding="utf-8")
+        # 2.0.2 网关校验 token 新鲜度，warm 脚本要自己现刷：把原料写成 JSON
+        # （旧格式裸 token 文本仍被 warm_account.mjs 兼容读取）
+        tokf.write_text(json.dumps({
+            "auth": acc.token if str(acc.token).lower().startswith("bearer ") else f"Bearer {acc.token}",
+            "refresh_token": getattr(acc, "refresh_token", "") or "",
+            "device_id": getattr(acc, "device_id", "") or "",
+        }, ensure_ascii=False), encoding="utf-8")
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         p = subprocess.run([str(node), str(home / "warm" / "warm_account.mjs"), tokf.name, str(rounds)],
                            capture_output=True, text=True, timeout=1800, cwd=str(home / "warm"),
