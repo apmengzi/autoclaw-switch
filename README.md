@@ -1,3 +1,12 @@
+# A·SWITCH（轻量版 · lite 分支）
+
+> **📦 两个版本，按需取用**
+>
+> | 分支 | 适合谁 | 内容 |
+> |---|---|---|
+> | **[`lite`](../../tree/lite)**（本分支·轻量版） | 只想管理 AutoClaw 账号 + 反代到 ZCode | 多账号切换、活动领取、AutoClaw 反代（6 模型） |
+> | **[`main`](../../tree/main)**（All-in-One） | 想一处管理多个平台的免费额度 | 七平台积分池：AutoClaw / WorkBuddy / 豆包 / Comate / Qoder / 千问办公 / Trae |
+
 # A-SWITCH
 
 [中文](README.md) | [English](README.en.md)
