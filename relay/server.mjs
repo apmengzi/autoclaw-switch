@@ -1076,16 +1076,18 @@ function readPool() {
       const uid = String(cj.userInfo?.user_id || cj.deviceId || lane + "-local");
       if (cj.token && uid && !uid.endsWith("-local")) {
         const existed = pool.accounts.find((a) => a.uid === uid);
-        const entry = {
-          uid, lane,
-          name: `[CN]${cj.userInfo?.user_name || cj.userInfo?.nickname || uid.slice(0, 8)}`,
+        const cred = {
+          lane,
           auth: String(cj.token).toLowerCase().startsWith("bearer ") ? cj.token : `Bearer ${cj.token}`,
           refresh_token: cj.refreshToken || "",
           device_id: cj.deviceId || "",
-          points: null, expiring: null, is_live: false,
         };
-        if (existed) Object.assign(existed, entry);
-        else pool.accounts.push(entry);
+        if (existed) Object.assign(existed, cred);
+        else pool.accounts.push({
+          uid, ...cred,
+          name: `[CN]${cj.userInfo?.user_name || cj.userInfo?.nickname || uid.slice(0, 8)}`,
+          points: null, expiring: null, is_live: false,
+        });
       }
       }
     } catch { /* 没有国内凭证源：纯海外池，正常 */ }
