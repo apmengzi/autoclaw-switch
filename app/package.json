@@ -1,12 +1,71 @@
 {
   "name": "autoclaw-zcode-console",
   "version": "1.0.0",
-  "description": "AutoClaw -> ZCode 反代控制台",
+  "description": "All-in-One 反代平台控制台：AutoClaw / WorkBuddy / Trae 三平台额度接入 ZCode",
+  "author": "PandaKing2021",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win --x64",
+    "dist:dir": "electron-builder --win --x64 --dir"
   },
   "devDependencies": {
-    "electron": "^33.4.11"
+    "electron": "^33.4.11",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.aswitch.console",
+    "productName": "A-SWITCH Console",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "main.js",
+      "preload.js",
+      "zcode-config.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "../bridge", "to": "bridge", "filter": ["**/*", "!*.png", "!persona.txt"] },
+      { "from": "../trae/relay.mjs", "to": "trae/relay.mjs" },
+      { "from": "../trae/decrypt_auth.py", "to": "trae/decrypt_auth.py" },
+      { "from": "../doubao/relay.mjs", "to": "doubao/relay.mjs" },
+      { "from": "../doubao/cdp.js", "to": "doubao/cdp.js" },
+      { "from": "../doubao/decrypt_cookies.py", "to": "doubao/decrypt_cookies.py" },
+      { "from": "../comate/relay.mjs", "to": "comate/relay.mjs" },
+      { "from": "../comate/decrypt_auth.py", "to": "comate/decrypt_auth.py" },
+      { "from": "../qoder/qoder_proxy.py", "to": "qoder/qoder_proxy.py" },
+      { "from": "../qoder/qoder_sign.py", "to": "qoder/qoder_sign.py" },
+      { "from": "../qoder/qoder_accounts.py", "to": "qoder/qoder_accounts.py" },
+      { "from": "../qoder/qoder_settings.py", "to": "qoder/qoder_settings.py" },
+      { "from": "../qoder/qoder_catalog.py", "to": "qoder/qoder_catalog.py" },
+      { "from": "../qoder/qoder_tasks.py", "to": "qoder/qoder_tasks.py" },
+      { "from": "../qoder/qoder_scheduler.py", "to": "qoder/qoder_scheduler.py" },
+      { "from": "../qoder/qoder_fingerprint.py", "to": "qoder/qoder_fingerprint.py" },
+      { "from": "../qoder/baseprompt.json", "to": "qoder/baseprompt.json" },
+      { "from": "../qoder/qoder_catalog_cn.json", "to": "qoder/qoder_catalog_cn.json" },
+      { "from": "../qoder/qoder_catalog_intl.json", "to": "qoder/qoder_catalog_intl.json" },
+      { "from": "../qoder/qoder_catalog_qworkcn.json", "to": "qoder/qoder_catalog_qworkcn.json" },
+      { "from": "../autoclaw-switch/a_switch.py", "to": "autoclaw-switch/a_switch.py" },
+      { "from": "../models-catalog.json", "to": "models-catalog.json" },
+      { "from": "../workbuddy/workbuddy-manager-v1.0.79/upstream/wb2api.exe", "to": "workbuddy/wb2api.exe" },
+      { "from": "../workbuddy/workbuddy-manager-v1.0.79/upstream/wb2api-login.exe", "to": "workbuddy/wb2api-login.exe" },
+      { "from": "../workbuddy/workbuddy-manager-v1.0.79/upstream/config.json", "to": "workbuddy/config.json" }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "A-SWITCH Console",
+      "artifactName": "A-SWITCH-Console-Setup-${version}.exe"
+    },
+    "portable": { "artifactName": "A-SWITCH-Console-Portable-${version}.exe" }
   }
 }

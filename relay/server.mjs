@@ -27,7 +27,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, createHash, timingSafeEqual } from "node:crypto";
 
 // ---------------- 配置 ----------------
 // 监听地址：默认 0.0.0.0（dsh 容器需经 192.168.65.254 访问）；
@@ -41,6 +41,37 @@ const STATE_DIR = process.env.AUTOCLAW_STATE_DIR || path.join(os.homedir(), ".op
 const TOKEN_FILE = path.join(STATE_DIR, ".gateway-token");
 const HEADERS_FILE = path.join(STATE_DIR, "request-headers.json");
 const MODEL_CONFIG_URL = "https://autoglm-api.autoglm.ai/autoclaw-proxy/proxy/autoclaw-model-config";
+
+// ---------------- 入站 api_key 闸门（A/B 档反代，2026-10-07） ----------------
+// 此前只有「非 loopback 监听才要 PROXY_TOKEN」——本机任何进程都能匿名打推理。
+// 现在把注册的 access.apiKey 真正当成入站钥匙：模型服务路径（/v1/messages、
+// /v1/chat/completions、/v1/responses、/v1/models、/routes）必须带钥匙，
+// 钥匙从 x-api-key 或 Authorization: Bearer 取，常数时间比对；
+// 健康探针 /health、业务桥 /fwd、管理 /admin/* 不在闸门内（桌面端与 GUI 后端零改动）。
+// 默认开启；设 AUTOCLAW_INBOUND_AUTH=0 退回旧行为（离线纯函数测试用）。
+// 钥匙集合 = 内置 autoclaw-local（= ZCode 注册值）+ PROXY_TOKEN（兼容 dsh 经
+// 192.168.65.254 的 Bearer）+ AUTOCLAW_INBOUND_KEYS 逗号追加（轮换/多把）。
+const INBOUND_AUTH = process.env.AUTOCLAW_INBOUND_AUTH !== "0";
+const INBOUND_KEYS = new Set(
+  ["autoclaw-local", PROXY_TOKEN]
+    .concat((process.env.AUTOCLAW_INBOUND_KEYS || "").split(","))
+    .map((s) => s.trim()).filter(Boolean),
+);
+function isModelPath(p) {
+  return p.endsWith("/messages") || p.endsWith("/completions") || p.endsWith("/responses")
+    || p === "/v1/models" || p === "/models" || p === "/routes";
+}
+function inboundKeyOk(req) {
+  const given = (req.headers["x-api-key"]
+    || String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "")).trim();
+  if (!given) return false;
+  for (const k of INBOUND_KEYS) {
+    const a = Buffer.from(given, "utf8"), b = Buffer.from(k, "utf8");
+    if (a.length === b.length && timingSafeEqual(a, b)) return true;
+  }
+  return false;
+}
+
 
 const BASE_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 // 离线验收会同时起十几个实例，它们**必须**别往生产 server.log 里写：
@@ -2865,6 +2896,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 401, { error: { message: "unauthorized: invalid or missing proxy token" } });
     }
   }
+  // 入站 api_key 闸门见 OPTIONS 之后（预检请求不带钥匙，必须先放行 204）
 
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
@@ -2874,6 +2906,13 @@ const server = http.createServer(async (req, res) => {
       "Access-Control-Max-Age": "86400",
     });
     return res.end();
+  }
+
+  // 入站 api_key 闸门：模型服务路径（含 loopback）必须带钥匙；探针/业务桥/管理端点豁免
+  if (INBOUND_AUTH && isModelPath(pathname) && !inboundKeyOk(req)) {
+    const msg = "unauthorized: missing or invalid api key (x-api-key or Authorization: Bearer)";
+    if (pathname.endsWith("/messages")) return anthropicError(res, 401, msg, "authentication_error");
+    return openaiError(res, 401, msg, "invalid_request_error");
   }
 
   try {

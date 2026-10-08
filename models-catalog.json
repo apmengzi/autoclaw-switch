@@ -1,0 +1,141 @@
+{
+  "$schema": "自述文件：本文件是全部平台链路对外模型名的单一事实源（single source of truth）。",
+  "naming": {
+    "title": "模型统一命名规范（2026-10-07 起生效）",
+    "rules": [
+      "① 一律小写：glm-5.3、deepseek-v4.1-flash；不出现大写字母。",
+      "② 形如 <家族>-<版本>[-<变体>]：家族用官方短名（glm / deepseek / kimi / minimax / qwen / doubao-seed / step / hunyuan）。",
+      "③ 禁止上游内部痕迹：Comate 的 _<hash> 后缀、AutoClaw 的路由前缀（zaicoding_ / tdpsk_ / zai_）、Comate 的 -fc / -oneapi 工具标记，一律不得出现在对外 id。",
+      "④ 同一底层模型在所有平台同名（如 glm-5.3 在 AutoClaw / Comate / Trae / Qoder 完全一致）；无法核实同一性的不得冒认同名（如 Qoder 的 DeepSeek-Flash 保持 deepseek-flash，不冒认 deepseek-v4-flash）。",
+      "⑤ 平台自带命名空间的保留前缀（WorkBuddy 的 cn:），前缀内同样小写。",
+      "⑥ 变体后缀语义固定：-flash / -pro / -plus / -turbo / -think / -official / -preview / -code / -evolving / -max。",
+      "⑦ 兼容：各链路同时接受旧名/原名（别名方式），ZCode 侧重注册后统一切到规范名；千问办公「高级」档底层版本未核实，按档位命名 qwen-pro，不编造版本号。"
+    ],
+    "conformance": "^[a-z0-9][a-z0-9.:-]*$（另禁 _<hex> 后缀与路由前缀；检测脚本 test_model_catalog.mjs）"
+  },
+  "platforms": {
+    "autoclaw": {
+      "providerId": "autoclaw-glm-provider",
+      "port": 18766,
+      "protocol": "anthropic-messages",
+      "catalogSource": "autoclaw-switch/a_switch.py 的 ZCODE_MODELS（含逐路由实测视觉矩阵；tdpsk_deepseek-* 两条 2026-09-29 起被上游移出账号目录、请求回 400，已在 a_switch.py 名单里注释保留，权益恢复后一并补回）",
+      "models": [
+        { "id": "glm-5.3", "display": "GLM-5.3", "route": "zaicoding_glm-5.3", "vision": false, "contextWindow": 500000 },
+        { "id": "glm-5.3-flash", "display": "GLM-5.3-Flash", "route": "zai_glm-5.3-flash", "vision": true, "contextWindow": 500000 },
+        { "id": "auto", "display": "Auto", "route": "zai_auto", "vision": true, "contextWindow": 500000 },
+        { "id": "auto-fast", "display": "Auto-Fast", "route": "zai_auto-fast", "vision": true, "contextWindow": 500000 }
+      ]
+    },
+    "workbuddy": {
+      "providerId": "workbuddy-openai-provider",
+      "port": 7863,
+      "protocol": "openai-chat-completions",
+      "catalogSource": "动态（wb2api 上游实时目录，46 个）",
+      "naming": "平台自带 cn: 命名空间，前缀内已全小写，符合规范；不改 Go 侧",
+      "models": []
+    },
+    "trae": {
+      "providerId": "trae-openai-provider",
+      "port": 18768,
+      "protocol": "openai-chat-completions",
+      "catalogSource": "动态（Trae 上游免费额度目录，随官方增减）",
+      "snapshotDate": "2026-10-07",
+      "models": [
+        { "id": "doubao-seed-2.0-code", "upstream": "Doubao-Seed-2.0-Code" },
+        { "id": "doubao-seed-code", "upstream": "Doubao-Seed-Code" },
+        { "id": "doubao-seed-2.1-pro", "upstream": "Doubao-Seed-2.1-Pro" },
+        { "id": "doubao-seed-2.1-turbo", "upstream": "Doubao-Seed-2.1-Turbo" },
+        { "id": "doubao-seed-evolving", "upstream": "Doubao-Seed-Evolving" },
+        { "id": "glm-5", "upstream": "glm-5" },
+        { "id": "glm-5.1", "upstream": "glm-5.1" },
+        { "id": "glm-5.2", "upstream": "glm-5.2" },
+        { "id": "glm-5.3", "upstream": "glm-5.3" },
+        { "id": "glm-5v-turbo", "upstream": "glm-5v-turbo" },
+        { "id": "deepseek-v4-flash", "upstream": "deepseek-v4-flash", "note": "上游同时有 DeepSeek-V4-Flash（仅 solo_coder 组）与本条（全组、多模态）；规范名归本条，TitleCase 条目并入" },
+        { "id": "deepseek-v4-pro", "upstream": "DeepSeek-V4-Pro" },
+        { "id": "deepseek-v4.1-flash", "upstream": "deepseek-v4.1-flash" },
+        { "id": "deepseek-v4-flash-official", "upstream": "DeepSeek-V4-Flash-Official" },
+        { "id": "deepseek-v4-pro-official", "upstream": "DeepSeek-V4-Pro-Official" },
+        { "id": "deepseek-r1", "upstream": "deepseek-r1" },
+        { "id": "deepseek-v4-flash-vision-exp", "upstream": "deepseek-v4-flash-vision-exp" },
+        { "id": "kimi-k2.5", "upstream": "kimi-k2.5" },
+        { "id": "kimi-k2.6", "upstream": "kimi-k2.6" },
+        { "id": "kimi-k2.7-code", "upstream": "kimi-k2.7-code" },
+        { "id": "kimi-k3", "upstream": "kimi-k3" },
+        { "id": "minimax-m2.7", "upstream": "minimax-m2.7" },
+        { "id": "minimax-m3", "upstream": "minimax-m3" },
+        { "id": "qwen-3.5", "upstream": "qwen-3.5" },
+        { "id": "qwen-3.6-plus", "upstream": "qwen-3.6-plus" },
+        { "id": "qwen-3.7-plus", "upstream": "qwen-3.7-plus" },
+        { "id": "qwen3.8-max", "upstream": "qwen3.8-max" },
+        { "id": "step-5-preview", "upstream": "step-5-preview" }
+      ]
+    },
+    "doubao": {
+      "providerId": "doubao-openai-provider",
+      "port": 18770,
+      "protocol": "openai-chat-completions",
+      "catalogSource": "合成目录（上游不可枚举）",
+      "models": [
+        { "id": "doubao", "display": "豆包（默认档）" },
+        { "id": "doubao-think", "display": "豆包（深度思考档）" }
+      ]
+    },
+    "comate": {
+      "providerId": "comate-openai-provider",
+      "port": 18774,
+      "protocol": "openai-chat-completions",
+      "catalogSource": "上游 /api/v2/api/models/available 实时目录；规范名 = 去 _<hash> 后缀、去 -fc/-oneapi 工具标记",
+      "models": [
+        { "id": "deepseek-v4-flash" },
+        { "id": "deepseek-v4-pro" },
+        { "id": "deepseek-v4.1-flash" },
+        { "id": "glm-4.7" },
+        { "id": "glm-5-turbo" },
+        { "id": "glm-5.0" },
+        { "id": "glm-5.1" },
+        { "id": "glm-5.2" },
+        { "id": "glm-5.3" },
+        { "id": "glm-5.3-flash" },
+        { "id": "glm-5v-turbo" },
+        { "id": "kimi-k2.6" },
+        { "id": "minimax-m2.5" },
+        { "id": "minimax-m3" },
+        { "id": "minimax-m2.7" }
+      ]
+    },
+    "qoder": {
+      "providerId": "qoder-openai-provider",
+      "port": 8791,
+      "protocol": "openai-chat-completions",
+      "catalogSource": "qoder_catalog_cn.json（CN 封闭区）",
+      "models": [
+        { "id": "auto", "upstream_key": "auto" },
+        { "id": "qwen3.8-max", "upstream_key": "qmodel_38max" },
+        { "id": "qwen3.8-flash", "upstream_key": "qfmodel" },
+        { "id": "qwen3.7-max", "upstream_key": "qmodel_latest" },
+        { "id": "qwen3.7-plus", "upstream_key": "qmodel" },
+        { "id": "qwen3.7-flash", "upstream_key": "q37fmodel" },
+        { "id": "deepseek-v4-pro", "upstream_key": "dmodel" },
+        { "id": "deepseek-flash", "upstream_key": "dfmodel", "note": "官方名 DeepSeek-Flash 未标版本，不冒认 deepseek-v4-flash" },
+        { "id": "glm-5.3", "upstream_key": "gmodel" },
+        { "id": "glm-5.3-flash", "upstream_key": "gfmodel" },
+        { "id": "glm-5.2", "upstream_key": "gm51model" },
+        { "id": "kimi-k3", "upstream_key": "kmodel_latest" },
+        { "id": "kimi-k2.8-preview", "upstream_key": "kmodel" },
+        { "id": "minimax-m2.7", "upstream_key": "mmodel" }
+      ]
+    },
+    "qwenwork": {
+      "providerId": "qwenwork-openai-provider",
+      "port": 8791,
+      "protocol": "openai-chat-completions",
+      "catalogSource": "qoder_catalog_qworkcn.json（qworkcn 封闭区）",
+      "models": [
+        { "id": "qwen3.8-flash", "upstream_key": "flash", "display": "标准", "note": "官方档位「标准」，此前已核实等同 qwen3.8-flash" },
+        { "id": "qwen-pro", "upstream_key": "pro", "display": "高级", "note": "官方档位「高级」，底层版本未核实，按档位命名" },
+        { "id": "qwen3.8-max", "upstream_key": "qwen3.8-max-preview", "display": "Qwen3.8-Max" }
+      ]
+    }
+  }
+}

@@ -1131,7 +1131,9 @@ def _autoclaw_roots():
     if env:
         roots.append(Path(env))
     for drive in ("C:", "D:", "E:", "F:"):
-        roots.append(Path(drive + "\\") / "AutoClaw")          # Path("C:")/"x" 是盘符相对路径（无分隔符），必须补 \n        roots.append(Path(drive + "\\") / "Program Files" / "AutoClaw")
+        # Path("C:")/"x" 是盘符相对路径（无分隔符），必须补尾部分隔符才落到盘根
+        roots.append(Path(drive + "\\") / "AutoClaw")
+        roots.append(Path(drive + "\\") / "Program Files" / "AutoClaw")
     roots.append(Path.home() / "AppData" / "Local" / "AutoClaw")
     return roots
 
@@ -3995,17 +3997,19 @@ RELAY_TOKEN = "autoclaw-local"
 ZCODE_PROVIDER_ID = "autoclaw-glm-provider"
 ZCODE_PROVIDER_NAME = "AutoClaw"
 ZCODE_BASE_URL = f"http://127.0.0.1:{RELAY_PORT}"
-# (ZCode 显示名, route, 支持视觉, contextWindow) —— 视觉矩阵来自逐路由实测
+# (ZCode 模型 id, route, 支持视觉, contextWindow) —— 视觉矩阵来自逐路由实测。
+# 第一列是对外规范名（见 models-catalog.json 命名规范）：全小写、无路由前缀；
+# 旧 TitleCase 名仍被 relay 的 normalizeRoute 宽容解析，双向兼容。
 ZCODE_MODELS = [
-    ("GLM-5.3",             "zaicoding_glm-5.3",              False, 500000),
+    ("glm-5.3",             "zaicoding_glm-5.3",              False, 500000),
     # 2026-09-29 起本机账号的模型目录里 tdpsk_deepseek-* 两条被上游移除
     # （runtime/model-catalog/remote-snapshot.json 只剩 4 个模型），请求回 400 非法模型。
-    # 权益恢复后把下面两行加回来即可：
-    # ("Deepseek-V4.1-Flash", "tdpsk_deepseek-v4-flash-202605", True,  500000),
-    # ("DeepSeek-V4-Pro",     "tdpsk_deepseek-v4-pro-202606",   False, 500000),
-    ("GLM-5.3-Flash",       "zai_glm-5.3-flash",              True,  500000),
-    ("Auto",                "zai_auto",                       True,  500000),
-    ("Auto-Fast",           "zai_auto-fast",                  True,  500000),
+    # 权益恢复后把下面两行取消注释加回来即可（测试脚本会忽略注释掉的条目）：
+    # ("deepseek-v4.1-flash", "tdpsk_deepseek-v4-flash-202605", True,  500000),
+    # ("deepseek-v4-pro",     "tdpsk_deepseek-v4-pro-202606",   False, 500000),
+    ("glm-5.3-flash",       "zai_glm-5.3-flash",              True,  500000),
+    ("auto",                "zai_auto",                       True,  500000),
+    ("auto-fast",           "zai_auto-fast",                  True,  500000),
 ]
 
 

@@ -1,0 +1,71 @@
+对 apmengzi/autoclaw-switch main（baf2a20）relay/server.mjs readPool() 的三处修复补丁。
+问题：只有国内 2.x 凭证、没有海外池（aswitch_cloud_pool.json）的用户，账号永远入不了池：
+  1) 双源凭证循环三个文件共用一个 try，任一缺失整循环被打断；
+  2) 海外池 JSON 解析失败 -> 外层 catch 直接 return null；
+  3) readPool 开头 statSync(POOL_FILE) 失败 -> return null。
+应用：git apply bridge/readpool-cn-fix.patch（在仓库根）。
+验证：2026-10-07 真实 2.x 国内凭证，隔离实例 lane 选择/真实推理 200/凭证轮换 全通过。
+
+--- /tmp/orig-server.mjs	2026-10-07 13:36:09.887443000 +0800
++++ .research/upstream-verify/server.mjs	2026-10-07 13:34:24.580557700 +0800
+@@ -1014,7 +1014,9 @@
+   if (POOL_MODE === "off") return null;
+   const now = Date.now();
+   let st;
+-  try { st = fs.statSync(POOL_FILE); } catch { return null; }   // 没有池子文件：A-SWITCH 还没导过
++  // [本地验证补丁] 没有池子文件不再 return null：纯国内用户（2.x 客户端 + watch_auth，无海外池）
++  // 也要能走到国内凭证加载。给一个"新鲜"的假 mtime，让过期分支与缓存键都正常工作。
++  try { st = fs.statSync(POOL_FILE); } catch { st = { mtimeMs: Date.now() }; }
+   // 国内凭证文件独立轮换（watch_auth 随 2.x 客户端重写），mtime 也要进缓存键
+   let cnMtime = 0;
+   try { cnMtime = fs.statSync(CN_POOL_FILE).mtimeMs; } catch { /* 没有国内凭证源 */ }
+@@ -1030,8 +1032,11 @@
+     pool.accounts = cnOnly;
+     return pool.accounts.length ? pool : null;
+   }
++  let j = {};   // [本地验证补丁] 提升作用域：海外池读不到时国内号也要能加载
+   try {
+-    const j = JSON.parse(fs.readFileSync(POOL_FILE, "utf8"));
++    // [本地验证补丁] 海外池解析失败不再炸整个 try：国内凭证块在它后面，必须继续执行
++    try { j = JSON.parse(fs.readFileSync(POOL_FILE, "utf8")); }
++    catch (e) { log(`海外账号池读不动（继续加载国内凭证源）：${scrub(e.message)}`); }
+     pool.accounts = Array.isArray(j.accounts) ? j.accounts : [];
+     // 国内官方线账号并入统一池（PR#4）：watch_auth.py 把 2.x 客户端 DPAPI 凭证解密成
+     // 1.x 形状写到 auth-compat/auth.json（跟随客户端轮换自动刷新，写完即生效）。
+@@ -1040,7 +1045,13 @@
+       // 双源：auth-cn.json（国内版 2.x）→ lane=cn；auth-oversea.json（国际 2.x）→ lane=oversea。
+       // 旧格式单文件 auth.json（无 lane 字段）按 cn 兼容。
+       for (const f of ["auth-cn.json", "auth-oversea.json", "auth.json"]) {
+-      const cj = JSON.parse(fs.readFileSync(path.join(path.dirname(CN_POOL_FILE), f), "utf8"));
++      // [本地验证补丁] 原版三个文件共用一个 try：任一缺失（最常见=只有 auth.json）会让
++      // 整个循环被 ENOENT 打断，国内号入不了池。改为逐文件 try/catch，缺失即跳过。
++      let cj;
++      try {
++        cj = JSON.parse(fs.readFileSync(path.join(path.dirname(CN_POOL_FILE), f), "utf8"));
++      } catch { continue; }
++      log(`[verify] CN 源文件 ${f} 解析成功 uid=${cj.userInfo && cj.userInfo.user_id} token=${!!cj.token}`);
+       const lane = cj.lane === "oversea" ? "oversea" : "cn";
+       const uid = String(cj.userInfo?.user_id || cj.deviceId || lane + "-local");
+       if (cj.token && uid && !uid.endsWith("-local")) {
+@@ -1055,6 +1066,7 @@
+         };
+         if (existed) Object.assign(existed, entry);
+         else pool.accounts.push(entry);
++        log(`[verify] 已入池 uid=${uid} lane=${lane} 池大小=${pool.accounts.length}`);
+       }
+       }
+     } catch { /* 没有国内凭证源：纯海外池，正常 */ }
+@@ -1070,9 +1082,11 @@
+     poolStateDirty = true;
+     return pool.accounts.length ? pool : null;
+   } catch (e) {
+-    log(`账号池读不动（退回单凭证）：${scrub(e.message)}`);
+-    return null;
++    // [本地验证补丁] 原版在此 return null：没有海外池的纯国内用户（2.x 客户端 + watch_auth）
++    // 连国内号都拿不到。改为记录后继续——下面的国内凭证源自行加载。
++    log(`海外账号池读不动（继续加载国内凭证源）：${scrub(e.message)}`);
+   }
++  return pool.accounts.length ? pool : null;
+ }
+ 
+ function nextDailyResetMs() {

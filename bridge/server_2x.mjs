@@ -27,7 +27,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, createHash, timingSafeEqual } from "node:crypto";
 
 // ---------------- 配置 ----------------
 // 监听地址：默认 0.0.0.0（dsh 容器需经 192.168.65.254 访问）；
@@ -41,6 +41,36 @@ const STATE_DIR = process.env.AUTOCLAW_STATE_DIR || path.join(os.homedir(), ".op
 const TOKEN_FILE = path.join(STATE_DIR, ".gateway-token");
 const HEADERS_FILE = path.join(STATE_DIR, "request-headers.json");
 const MODEL_CONFIG_URL = "https://autoglm-api.autoglm.ai/autoclaw-proxy/proxy/autoclaw-model-config";
+
+// ---------------- 入站 api_key 闸门（A/B 档反代，2026-10-07） ----------------
+// 此前只有「非 loopback 监听才要 PROXY_TOKEN」——本机任何进程都能匿名打推理。
+// 现在把注册的 access.apiKey 真正当成入站钥匙：模型服务路径（/v1/messages、
+// /v1/chat/completions、/v1/responses、/v1/models、/routes）必须带钥匙，
+// 钥匙从 x-api-key 或 Authorization: Bearer 取，常数时间比对；
+// 健康探针 /health、业务桥 /fwd、管理 /admin/* 不在闸门内（桌面端与 GUI 后端零改动）。
+// 默认开启；设 AUTOCLAW_INBOUND_AUTH=0 退回旧行为（离线纯函数测试用）。
+// 钥匙集合 = 内置 autoclaw-local（= ZCode 注册值）+ PROXY_TOKEN（兼容 dsh 经
+// 192.168.65.254 的 Bearer）+ AUTOCLAW_INBOUND_KEYS 逗号追加（轮换/多把）。
+const INBOUND_AUTH = process.env.AUTOCLAW_INBOUND_AUTH !== "0";
+const INBOUND_KEYS = new Set(
+  ["autoclaw-local", PROXY_TOKEN]
+    .concat((process.env.AUTOCLAW_INBOUND_KEYS || "").split(","))
+    .map((s) => s.trim()).filter(Boolean),
+);
+function isModelPath(p) {
+  return p.endsWith("/messages") || p.endsWith("/completions") || p.endsWith("/responses")
+    || p === "/v1/models" || p === "/models" || p === "/routes";
+}
+function inboundKeyOk(req) {
+  const given = (req.headers["x-api-key"]
+    || String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "")).trim();
+  if (!given) return false;
+  for (const k of INBOUND_KEYS) {
+    const a = Buffer.from(given, "utf8"), b = Buffer.from(k, "utf8");
+    if (a.length === b.length && timingSafeEqual(a, b)) return true;
+  }
+  return false;
+}
 
 const BASE_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 // 离线验收会同时起十几个实例，它们**必须**别往生产 server.log 里写：
@@ -58,16 +88,16 @@ const FALLBACK_ROUTES = [
   { id: "zai_auto", name: "Auto", contextWindow: 1048576, maxTokens: 131072 },
   { id: "zai_auto-fast", name: "Auto-Fast", contextWindow: 1048576, maxTokens: 393216 },
 ];
-// 对外暴露的友好别名（与 AutoClaw UI 的六个可选模型保持一致）。
+// 对外暴露的规范名（见 models-catalog.json 的统一命名规范）：全小写、无路由前缀。
 // DSH 的 dsh-deepseek-* / deepseek-flash 兼容名仍由 DSH_ALIASES 解析，
 // 但不放进公开清单，避免污染 ZCode 的模型选择列表。
 const ALIASES = [
-  "GLM-5.3",
-  "Deepseek-V4.1-Flash",
-  "DeepSeek-V4-Pro",
-  "GLM-5.3-Flash",
-  "Auto",
-  "Auto-Fast",
+  "glm-5.3",
+  "deepseek-v4.1-flash",
+  "deepseek-v4-pro",
+  "glm-5.3-flash",
+  "auto",
+  "auto-fast",
 ];
 
 // 显式模型名 -> route。要优先于下面的关键词正则：正则 /glm-5.3/ 会子串命中
@@ -2739,6 +2769,13 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
+  // 入站 api_key 闸门：模型服务路径（含 loopback）必须带钥匙；探针/业务桥/管理端点豁免
+  if (INBOUND_AUTH && isModelPath(pathname) && !inboundKeyOk(req)) {
+    const msg = "unauthorized: missing or invalid api key (x-api-key or Authorization: Bearer)";
+    if (pathname.endsWith("/messages")) return anthropicError(res, 401, msg, "authentication_error");
+    return openaiError(res, 401, msg, "invalid_request_error");
+  }
+
   try {
     // 业务请求 TLS 桥（2026-09-25）：上游 WAF 启用 TLS 指纹白名单后，python/curl 的
     // 握手在 TLS 阶段被 RST（WinError 10054 / SSL EOF），只有本进程的 undici 指纹能过。
@@ -2828,16 +2865,18 @@ const server = http.createServer(async (req, res) => {
       if (pathname === "/v1/models" || pathname === "/models") {
         const list = await getModels();
         const now = Math.floor(Date.now() / 1000);
-        const data = [
-          ...list.map((m) => ({
-            id: m.id, object: "model", created: now, owned_by: "autoclaw",
-            display_name: m.name, context_window: m.contextWindow, max_tokens: m.maxTokens,
-          })),
-          ...ALIASES.map((a) => ({
-            id: a, object: "model", created: now, owned_by: "autoclaw",
-            display_name: a, alias_of: normalizeRoute(a),
-          })),
-        ];
+        // 对外 id 一律规范名（models-catalog.json）：EXPLICIT_ROUTES 的反向映射给出
+        // route -> 规范名；route 前缀（zaicoding_/tdpsk_/zai_）是内部选路细节，不再当 id 暴露。
+        // normalizeRoute 对规范名/旧 TitleCase 名/路由名都宽容解析，双向兼容。
+        const canonOfRoute = new Map();
+        for (const [canon, rts] of Object.entries(EXPLICIT_ROUTES)) {
+          for (const rt of Array.isArray(rts) ? rts : [rts]) if (!canonOfRoute.has(rt)) canonOfRoute.set(rt, canon);
+        }
+        const data = list.map((m) => ({
+          id: canonOfRoute.get(m.id) || String(m.name || m.id).toLowerCase(),
+          object: "model", created: now, owned_by: "autoclaw",
+          display_name: m.name, context_window: m.contextWindow, max_tokens: m.maxTokens, route: m.id,
+        }));
         return sendJson(res, 200, { object: "list", data });
       }
       if (pathname === "/routes") {

@@ -1,0 +1,992 @@
+{
+ "artifact.delete": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/my_space/artifacts/:artifact_id",
+  "transport": "api"
+ },
+ "artifact.detail": {
+  "method": "GET",
+  "path": "/api/remote/v1/my_space/artifacts/:artifact_id",
+  "transport": "api"
+ },
+ "artifact.list": {
+  "method": "GET",
+  "path": "/api/remote/v1/my_space/artifacts",
+  "transport": "api"
+ },
+ "artifact.listArtifactMentions": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions/:session_id/artifact_mentions",
+  "transport": "api"
+ },
+ "artifact.list_lark_documents": {
+  "method": "GET",
+  "path": "/api/remote/v1/my_space/lark/list",
+  "transport": "api"
+ },
+ "artifact.on_updated": {
+  "method": "POST",
+  "path": "/api/remote/v1/my_space/artifacts/notify_updated",
+  "transport": "api"
+ },
+ "artifact.pin": {
+  "method": "POST",
+  "path": "/api/remote/v1/my_space/artifacts/:artifact_id/pin",
+  "transport": "api"
+ },
+ "artifact.refresh_link_artifact_status": {
+  "method": "POST",
+  "path": "/api/remote/v1/my_space/artifacts/refresh_link_artifact_status",
+  "transport": "api"
+ },
+ "artifact.resolve_relative_paths": {
+  "method": "POST",
+  "path": "/api/remote/v1/shared_artifacts/:artifact_id/resolve_relative_paths",
+  "transport": "api"
+ },
+ "artifact.unpin": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/my_space/artifacts/:artifact_id/pin",
+  "transport": "api"
+ },
+ "auth.issueSessionToken": {
+  "method": "POST",
+  "path": "/api/remote/v1/auth/session/:chatSessionId/token",
+  "transport": "api"
+ },
+ "browser.checkToolsEnabled": {
+  "method": "GET",
+  "path": "/api/remote/v1/browser/tools-enabled",
+  "transport": "api"
+ },
+ "browser.deleteBrowserData": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/browser/data",
+  "transport": "api"
+ },
+ "browser.presignDownload": {
+  "method": "GET",
+  "path": "/api/remote/v1/browser/data/presign-download",
+  "transport": "api"
+ },
+ "browser.presignUpload": {
+  "method": "GET",
+  "path": "/api/remote/v1/browser/data/presign-upload",
+  "transport": "api"
+ },
+ "chat.actionQueue": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/action_queue",
+  "transport": "api"
+ },
+ "chat.batchListByProject": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/batch_by_project",
+  "transport": "api"
+ },
+ "chat.batchSyncHistory": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/batch_sync_history",
+  "transport": "api"
+ },
+ "chat.browserMcpResponse": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/browser_mcp_response",
+  "transport": "api"
+ },
+ "chat.cancelResolveConflicts": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/resolve_conflicts",
+  "transport": "api"
+ },
+ "chat.commitSession": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/commit",
+  "transport": "api"
+ },
+ "chat.createSession": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions",
+  "transport": "api"
+ },
+ "chat.createSubSession": {
+  "method": "POST",
+  "path": "/api/remote/v1/sub_sessions",
+  "transport": "api"
+ },
+ "chat.deleteMessage": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/messages/:message_id",
+  "transport": "api"
+ },
+ "chat.deleteRepoGroup": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/chat_sessions/repo_groups",
+  "transport": "api"
+ },
+ "chat.deleteSession": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id",
+  "transport": "api"
+ },
+ "chat.freezeSession": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/freeze",
+  "transport": "api"
+ },
+ "chat.getMessages": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/messages",
+  "transport": "api"
+ },
+ "chat.getOutputArtifactMetadata": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/output-artifact-metadata",
+  "transport": "api"
+ },
+ "chat.getRevertTargetSnapshot": {
+  "method": "GET",
+  "path": "/api/remote/v1/messages/:message_id/revert_target_snapshot",
+  "transport": "api"
+ },
+ "chat.getSession": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id",
+  "transport": "api"
+ },
+ "chat.getSessionStatus": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/status",
+  "transport": "api"
+ },
+ "chat.globalSearch": {
+  "method": "POST",
+  "path": "/api/remote/v1/global_search",
+  "transport": "api"
+ },
+ "chat.listPinnedSessions": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions/pinned",
+  "transport": "api"
+ },
+ "chat.listRepoGroups": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions/repo_groups",
+  "transport": "api"
+ },
+ "chat.listSessions": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions",
+  "transport": "api"
+ },
+ "chat.markSessionRead": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/read",
+  "transport": "api"
+ },
+ "chat.messageRevert": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/messages/:target_message_id/revert",
+  "transport": "api"
+ },
+ "chat.messageRevertCheck": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/messages/:target_message_id/revert_check",
+  "transport": "api"
+ },
+ "chat.pinSession": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/pin",
+  "transport": "api"
+ },
+ "chat.resumeMessage": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/messages/:message_id/resume",
+  "transport": "api"
+ },
+ "chat.sendMessage": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/messages",
+  "transport": "api"
+ },
+ "chat.sendUserDecision": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/user_decision",
+  "transport": "api"
+ },
+ "chat.stopSession": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/stop",
+  "transport": "api"
+ },
+ "chat.subscribe": {
+  "method": "GET",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/events",
+  "transport": "?"
+ },
+ "chat.unpinSession": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/unpin",
+  "transport": "api"
+ },
+ "chat.wakeupSandbox": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/wakeup_sandbox",
+  "transport": "api"
+ },
+ "context.getUserMentions": {
+  "method": "GET",
+  "path": "/api/remote/v1/user_mentions/slash",
+  "transport": "api"
+ },
+ "designExport.convertHtml2Figma": {
+  "method": "POST",
+  "path": "/api/remote/v1/html2figma",
+  "transport": "api"
+ },
+ "designExport.convertHtml2FigmaMulti": {
+  "method": "POST",
+  "path": "/api/remote/v1/html2figma/multi",
+  "transport": "api"
+ },
+ "designLibrary.createDesignLibrary": {
+  "method": "POST",
+  "path": "/api/remote/v1/design_libraries",
+  "transport": "api"
+ },
+ "designLibrary.createVersion": {
+  "method": "POST",
+  "path": "/api/remote/v1/design_libraries/:design_library_id/versions",
+  "transport": "api"
+ },
+ "designLibrary.deleteDesignLibrary": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/design_libraries/:design_library_id",
+  "transport": "api"
+ },
+ "designLibrary.duplicateDesignLibrary": {
+  "method": "POST",
+  "path": "/api/remote/v1/design_libraries/:design_library_id/duplicate",
+  "transport": "api"
+ },
+ "designLibrary.getDesignLibrariesBySkill": {
+  "method": "GET",
+  "path": "/api/remote/v1/design_libraries/by_skill/:skill_id",
+  "transport": "api"
+ },
+ "designLibrary.getDesignLibrary": {
+  "method": "GET",
+  "path": "/api/remote/v1/design_libraries/:design_library_id",
+  "transport": "api"
+ },
+ "designLibrary.getDownloadUrl": {
+  "method": "GET",
+  "path": "/api/remote/v1/design_libraries/:design_library_id/download_url",
+  "transport": "api"
+ },
+ "designLibrary.getUploadCredential": {
+  "method": "POST",
+  "path": "/api/remote/v1/design_libraries/upload_credential",
+  "transport": "api"
+ },
+ "designLibrary.getVersion": {
+  "method": "GET",
+  "path": "/api/remote/v1/design_libraries/:design_library_id/version",
+  "transport": "api"
+ },
+ "designLibrary.listDesignLibraries": {
+  "method": "GET",
+  "path": "/api/remote/v1/design_libraries",
+  "transport": "api"
+ },
+ "designLibrary.patchDesignLibrary": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/design_libraries/:design_library_id",
+  "transport": "api"
+ },
+ "designLibrary.updateDesignLibrarySkillBinding": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/design_libraries/:design_library_id/skill_binding",
+  "transport": "api"
+ },
+ "docMetadata.batch": {
+  "method": "POST",
+  "path": "/api/remote/v1/doc_metadata/batch",
+  "transport": "api"
+ },
+ "environment.createEnvironment": {
+  "method": "POST",
+  "path": "/api/remote/v1/environments",
+  "transport": "api"
+ },
+ "environment.deleteEnvironment": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/environments/:id",
+  "transport": "api"
+ },
+ "environment.getEnvironment": {
+  "method": "GET",
+  "path": "/api/remote/v1/environments/:id",
+  "transport": "api"
+ },
+ "environment.getSupportedVersions": {
+  "method": "GET",
+  "path": "/api/remote/v1/environments/supported_versions",
+  "transport": "api"
+ },
+ "environment.listEnvironments": {
+  "method": "GET",
+  "path": "/api/remote/v1/environments",
+  "transport": "api"
+ },
+ "environment.updateEnvironment": {
+  "method": "PUT",
+  "path": "/api/remote/v1/environments/:id",
+  "transport": "api"
+ },
+ "explorer.getExplorer": {
+  "method": "GET",
+  "path": "/api/remote/v1/explorer",
+  "transport": "api"
+ },
+ "fileConvert.deleteFile": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/file_converts/:file_token",
+  "transport": "api"
+ },
+ "fileConvert.getStatus": {
+  "method": "GET",
+  "path": "/api/remote/v1/file_converts/:file_token",
+  "transport": "api"
+ },
+ "fileConvert.getUploadAuth": {
+  "method": "POST",
+  "path": "/api/remote/v1/file_converts/upload_auth",
+  "transport": "api"
+ },
+ "fileConvert.startConvert": {
+  "method": "POST",
+  "path": "/api/remote/v1/file_converts/start",
+  "transport": "api"
+ },
+ "frontier.getAccessKey": {
+  "method": "GET",
+  "path": "/api/remote/v1/frontier/access_key",
+  "transport": "api"
+ },
+ "frontier.getWsTicket": {
+  "method": "POST",
+  "path": "/api/remote/v1/events/ticket",
+  "transport": "api"
+ },
+ "git.createPullRequest": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/pull_requests",
+  "transport": "api"
+ },
+ "git.deleteRemoteBranch": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/git/branch",
+  "transport": "api"
+ },
+ "git.getGitToken": {
+  "method": "GET",
+  "path": "/api/remote/v1/git/token",
+  "transport": "api"
+ },
+ "git.listBranches": {
+  "method": "GET",
+  "path": "/api/remote/v1/git/branches",
+  "transport": "api"
+ },
+ "git.listRepositories": {
+  "method": "GET",
+  "path": "/api/remote/v1/git/repositories",
+  "transport": "api"
+ },
+ "goal.clear": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:session_id/goal/clear",
+  "transport": "api"
+ },
+ "goal.get": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:session_id/goal/get",
+  "transport": "api"
+ },
+ "goal.update": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:session_id/goal/update",
+  "transport": "api"
+ },
+ "lark.listDirectoryCandidates": {
+  "method": "POST",
+  "path": "/api/remote/v1/lark_directory/candidates",
+  "transport": "api"
+ },
+ "lark.listDocumentMentions": {
+  "method": "GET",
+  "path": "/api/remote/v1/lark/documents/mention",
+  "transport": "api"
+ },
+ "mcpConfig.createMcpConfig": {
+  "method": "POST",
+  "path": "/api/remote/v1/mcp_configs",
+  "transport": "api"
+ },
+ "mcpConfig.deleteMcpConfig": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/mcp_configs/:mcp_id",
+  "transport": "api"
+ },
+ "mcpConfig.getGalleryStatus": {
+  "method": "GET",
+  "path": "/api/remote/v1/mcp_configs/gallery_status",
+  "transport": "api"
+ },
+ "mcpConfig.getMcpConfig": {
+  "method": "GET",
+  "path": "/api/remote/v1/mcp_configs/:mcp_id",
+  "transport": "api"
+ },
+ "mcpConfig.listMcpConfigs": {
+  "method": "GET",
+  "path": "/api/remote/v1/mcp_configs",
+  "transport": "api"
+ },
+ "mcpConfig.patchMcpConfig": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/mcp_configs/:mcp_id",
+  "transport": "api"
+ },
+ "mcpConfig.updateMcpConfig": {
+  "method": "PUT",
+  "path": "/api/remote/v1/mcp_configs/:mcp_id",
+  "transport": "api"
+ },
+ "model.listModels": {
+  "method": "GET",
+  "path": "/api/remote/v1/models",
+  "transport": "api"
+ },
+ "plugin.getPlugin": {
+  "method": "GET",
+  "path": "/api/remote/v1/plugins/:plugin_id",
+  "transport": "api"
+ },
+ "plugin.installPlugin": {
+  "method": "POST",
+  "path": "/api/remote/v1/plugins",
+  "transport": "api"
+ },
+ "plugin.listEnabledPlugins": {
+  "method": "GET",
+  "path": "/api/remote/v1/plugins/enabled",
+  "transport": "api"
+ },
+ "plugin.listPlugins": {
+  "method": "GET",
+  "path": "/api/remote/v1/plugins",
+  "transport": "api"
+ },
+ "plugin.recommendPlugin": {
+  "method": "POST",
+  "path": "/api/remote/v1/chat_sessions/:chat_session_id/plugin_recommendations",
+  "transport": "api"
+ },
+ "plugin.uninstallPlugin": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/plugins/:plugin_id",
+  "transport": "api"
+ },
+ "plugin.updatePluginAbilities": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/plugins/:plugin_id/abilities",
+  "transport": "api"
+ },
+ "plugin.updatePluginEnabled": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/plugins/:plugin_id/enabled",
+  "transport": "api"
+ },
+ "project.createProject": {
+  "method": "POST",
+  "path": "/api/remote/v1/projects",
+  "transport": "api"
+ },
+ "project.deleteProject": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/projects/:project_id",
+  "transport": "api"
+ },
+ "project.getProject": {
+  "method": "GET",
+  "path": "/api/remote/v1/projects/:project_id",
+  "transport": "api"
+ },
+ "project.listProjects": {
+  "method": "GET",
+  "path": "/api/remote/v1/projects",
+  "transport": "api"
+ },
+ "project.updateProject": {
+  "method": "PUT",
+  "path": "/api/remote/v1/projects/:project_id",
+  "transport": "api"
+ },
+ "scheduledTask.ackUnloginNotice": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks/unlogin_notice/ack",
+  "transport": "api"
+ },
+ "scheduledTask.createFromTemplate": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks/from_template",
+  "transport": "api"
+ },
+ "scheduledTask.createScheduledTask": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks",
+  "transport": "api"
+ },
+ "scheduledTask.createScheduledTaskFromTemplate": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks/from_template",
+  "transport": "api"
+ },
+ "scheduledTask.createScheduledTaskTemplate": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_task_templates",
+  "transport": "api"
+ },
+ "scheduledTask.createTask": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks",
+  "transport": "api"
+ },
+ "scheduledTask.createTemplate": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_task_templates",
+  "transport": "api"
+ },
+ "scheduledTask.deleteExecution": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/executions/:execution_id",
+  "transport": "api"
+ },
+ "scheduledTask.deleteScheduledTask": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id",
+  "transport": "api"
+ },
+ "scheduledTask.deleteScheduledTaskSessions": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/sessions",
+  "transport": "api"
+ },
+ "scheduledTask.deleteScheduledTaskTemplate": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/scheduled_task_templates/:template_id",
+  "transport": "api"
+ },
+ "scheduledTask.deleteTask": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id",
+  "transport": "api"
+ },
+ "scheduledTask.deleteTaskSessions": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/sessions",
+  "transport": "api"
+ },
+ "scheduledTask.deleteTemplate": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/scheduled_task_templates/:template_id",
+  "transport": "api"
+ },
+ "scheduledTask.getScheduledTask": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id",
+  "transport": "api"
+ },
+ "scheduledTask.getScheduledTaskTemplate": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_task_templates/:template_id",
+  "transport": "api"
+ },
+ "scheduledTask.getTask": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id",
+  "transport": "api"
+ },
+ "scheduledTask.getTemplate": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_task_templates/:template_id",
+  "transport": "api"
+ },
+ "scheduledTask.getUnloginNotice": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_tasks/unlogin_notice",
+  "transport": "api"
+ },
+ "scheduledTask.listExecutions": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/executions",
+  "transport": "api"
+ },
+ "scheduledTask.listPinnedTasks": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_tasks/pinned",
+  "transport": "api"
+ },
+ "scheduledTask.listScheduledTaskExecutions": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/executions",
+  "transport": "api"
+ },
+ "scheduledTask.listScheduledTaskTemplates": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_task_templates",
+  "transport": "api"
+ },
+ "scheduledTask.listScheduledTasks": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_tasks",
+  "transport": "api"
+ },
+ "scheduledTask.listTasks": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_tasks",
+  "transport": "api"
+ },
+ "scheduledTask.listTemplates": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_task_templates",
+  "transport": "api"
+ },
+ "scheduledTask.listUserExecutions": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_task_executions",
+  "transport": "api"
+ },
+ "scheduledTask.listUserScheduledTaskExecutions": {
+  "method": "GET",
+  "path": "/api/remote/v1/scheduled_task_executions",
+  "transport": "api"
+ },
+ "scheduledTask.markExecutionRead": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/executions/:execution_id/read",
+  "transport": "api"
+ },
+ "scheduledTask.pinTask": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/pin",
+  "transport": "api"
+ },
+ "scheduledTask.triggerScheduledTask": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/trigger",
+  "transport": "api"
+ },
+ "scheduledTask.triggerTask": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/trigger",
+  "transport": "api"
+ },
+ "scheduledTask.unpinTask": {
+  "method": "POST",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id/unpin",
+  "transport": "api"
+ },
+ "scheduledTask.updateScheduledTask": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id",
+  "transport": "api"
+ },
+ "scheduledTask.updateScheduledTaskTemplate": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/scheduled_task_templates/:template_id",
+  "transport": "api"
+ },
+ "scheduledTask.updateTask": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/scheduled_tasks/:scheduled_task_id",
+  "transport": "api"
+ },
+ "scheduledTask.updateTemplate": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/scheduled_task_templates/:template_id",
+  "transport": "api"
+ },
+ "share.createLocalArtifactShare": {
+  "method": "POST",
+  "path": "/api/remote/v1/share/local_artifact",
+  "transport": "api"
+ },
+ "share.createLocalConversationShare": {
+  "method": "POST",
+  "path": "/api/remote/v1/share/local_conversation",
+  "transport": "api"
+ },
+ "share.createShare": {
+  "method": "POST",
+  "path": "/api/remote/v1/share",
+  "transport": "api"
+ },
+ "share.deleteShare": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/share/:share_session_id",
+  "transport": "api"
+ },
+ "share.getArtifactShare": {
+  "method": "GET",
+  "path": "/api/remote/v1/share/artifact",
+  "transport": "api"
+ },
+ "share.getAuditStatus": {
+  "method": "GET",
+  "path": "/api/remote/v1/share/:share_session_id/audit_status",
+  "transport": "api"
+ },
+ "share.getMessages": {
+  "method": "GET",
+  "path": "/api/remote/v1/share/:share_session_id/messages",
+  "transport": "api"
+ },
+ "share.getSession": {
+  "method": "GET",
+  "path": "/api/remote/v1/share/:share_session_id",
+  "transport": "api"
+ },
+ "share.listShares": {
+  "method": "GET",
+  "path": "/api/remote/v1/share",
+  "transport": "api"
+ },
+ "share.presignLocalArtifactBundleUpload": {
+  "method": "POST",
+  "path": "/api/remote/v1/share/local_artifact/presign-bundle-upload",
+  "transport": "api"
+ },
+ "share.presignLocalArtifactUpload": {
+  "method": "POST",
+  "path": "/api/remote/v1/share/local_artifact/presign-upload",
+  "transport": "api"
+ },
+ "share.presignLocalConversationResourceUpload": {
+  "method": "POST",
+  "path": "/api/remote/v1/share/local_conversation/resources/presign-upload",
+  "transport": "api"
+ },
+ "share.updateShareStatus": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/share/:share_session_id/status",
+  "transport": "api"
+ },
+ "shareFileConvert.getStatus": {
+  "method": "GET",
+  "path": "/api/remote/v1/share/:share_session_id/file_converts/:file_token",
+  "transport": "api"
+ },
+ "shareFileConvert.getUploadAuth": {
+  "method": "POST",
+  "path": "/api/remote/v1/share/:share_session_id/file_converts/upload_auth",
+  "transport": "api"
+ },
+ "shareFileConvert.startConvert": {
+  "method": "POST",
+  "path": "/api/remote/v1/share/:share_session_id/file_converts/start",
+  "transport": "api"
+ },
+ "sharedArtifact.deleteSharedArtifact": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/shared_artifacts/:artifact_id",
+  "transport": "api"
+ },
+ "sharedArtifact.getPublicSharedArtifact": {
+  "method": "GET",
+  "path": "/api/remote/v1/public/shared_artifacts/:token",
+  "transport": "api"
+ },
+ "sharedArtifact.getPublishStatus": {
+  "method": "GET",
+  "path": "/api/remote/v1/shared_artifacts/publish_status",
+  "transport": "api"
+ },
+ "sharedArtifact.getSharedArtifact": {
+  "method": "GET",
+  "path": "/api/remote/v1/shared_artifacts/:artifact_id",
+  "transport": "api"
+ },
+ "sharedArtifact.listSharedArtifacts": {
+  "method": "GET",
+  "path": "/api/remote/v1/shared_artifacts",
+  "transport": "api"
+ },
+ "sharedArtifact.pinSharedArtifact": {
+  "method": "PUT",
+  "path": "/api/remote/v1/shared_artifacts/:artifact_id/pin",
+  "transport": "api"
+ },
+ "sharedArtifact.publishSharedArtifact": {
+  "method": "POST",
+  "path": "/api/remote/v1/shared_artifacts/publish",
+  "transport": "api"
+ },
+ "sharedArtifact.revokePublishSharedArtifact": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/shared_artifacts/:artifact_id/revoke_publish",
+  "transport": "api"
+ },
+ "sharedArtifact.unpinSharedArtifact": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/shared_artifacts/:artifact_id/pin",
+  "transport": "api"
+ },
+ "sharedArtifact.unpublishSharedArtifact": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/shared_artifacts/:artifact_id/publish",
+  "transport": "api"
+ },
+ "sharedArtifact.updateSharedArtifact": {
+  "method": "PUT",
+  "path": "/api/remote/v1/shared_artifacts/:artifact_id",
+  "transport": "api"
+ },
+ "skill.createSkill": {
+  "method": "POST",
+  "path": "/api/remote/v1/skills",
+  "transport": "api"
+ },
+ "skill.deleteSkill": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/skills/:skill_id",
+  "transport": "api"
+ },
+ "skill.getSkill": {
+  "method": "GET",
+  "path": "/api/remote/v1/skills/:skill_id",
+  "transport": "api"
+ },
+ "skill.getSkillByName": {
+  "method": "GET",
+  "path": "/api/remote/v1/skills/by-name/:name",
+  "transport": "api"
+ },
+ "skill.listSkills": {
+  "method": "GET",
+  "path": "/api/remote/v1/skills",
+  "transport": "api"
+ },
+ "skill.updateSkill": {
+  "method": "PUT",
+  "path": "/api/remote/v1/skills/:skill_id",
+  "transport": "api"
+ },
+ "skill.updateSkillEnabled": {
+  "method": "PATCH",
+  "path": "/api/remote/v1/skills/:skill_id/enabled",
+  "transport": "api"
+ },
+ "slashCommand.createSlashCommand": {
+  "method": "POST",
+  "path": "/api/remote/v1/slash_commands",
+  "transport": "api"
+ },
+ "slashCommand.deleteSlashCommand": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/slash_commands/:sc_id",
+  "transport": "api"
+ },
+ "slashCommand.getSlashCommand": {
+  "method": "GET",
+  "path": "/api/remote/v1/slash_commands/:sc_id",
+  "transport": "api"
+ },
+ "slashCommand.getSlashCommandByName": {
+  "method": "GET",
+  "path": "/api/remote/v1/slash_commands/by-name/:name",
+  "transport": "api"
+ },
+ "slashCommand.listSlashCommands": {
+  "method": "GET",
+  "path": "/api/remote/v1/slash_commands",
+  "transport": "api"
+ },
+ "slashCommand.updateSlashCommand": {
+  "method": "PUT",
+  "path": "/api/remote/v1/slash_commands/:sc_id",
+  "transport": "api"
+ },
+ "user.createSshKey": {
+  "method": "POST",
+  "path": "/api/remote/v1/user/ssh_key",
+  "transport": "api"
+ },
+ "user.deleteSshKey": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/user/ssh_key",
+  "transport": "api"
+ },
+ "user.getSshKey": {
+  "method": "GET",
+  "path": "/api/remote/v1/user/ssh_key",
+  "transport": "api"
+ },
+ "user.rotateSshKey": {
+  "method": "POST",
+  "path": "/api/remote/v1/user/ssh_key/rotate",
+  "transport": "api"
+ },
+ "userRule.createUserRule": {
+  "method": "POST",
+  "path": "/api/remote/v1/user_rules",
+  "transport": "api"
+ },
+ "userRule.deleteUserRule": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/user_rules/:rule_id",
+  "transport": "api"
+ },
+ "userRule.listUserRules": {
+  "method": "GET",
+  "path": "/api/remote/v1/user_rules",
+  "transport": "api"
+ },
+ "userRule.updateUserRule": {
+  "method": "PUT",
+  "path": "/api/remote/v1/user_rules/:rule_id",
+  "transport": "api"
+ },
+ "webhook.createWebhook": {
+  "method": "POST",
+  "path": "/api/remote/v1/webhooks",
+  "transport": "api"
+ },
+ "webhook.deleteWebhook": {
+  "method": "DELETE",
+  "path": "/api/remote/v1/webhooks/:webhook_id",
+  "transport": "api"
+ },
+ "webhook.getWebhook": {
+  "method": "GET",
+  "path": "/api/remote/v1/webhooks/:webhook_id",
+  "transport": "api"
+ },
+ "webhook.listWebhooks": {
+  "method": "GET",
+  "path": "/api/remote/v1/webhooks",
+  "transport": "api"
+ },
+ "webhook.testWebhook": {
+  "method": "POST",
+  "path": "/api/remote/v1/webhooks/:webhook_id/test",
+  "transport": "api"
+ },
+ "webhook.updateWebhook": {
+  "method": "PUT",
+  "path": "/api/remote/v1/webhooks/:webhook_id",
+  "transport": "api"
+ }
+}
