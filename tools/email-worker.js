@@ -1,7 +1,7 @@
 // Cloudflare Email Worker —— 自建域名验证码邮箱（网页查看器 + JSON API 双模）
 //
 // 功能：
-//   1. email 事件：接收任意 *@szpuedu.dpdns.org 的邮件，解码 MIME，存 KV（含 HTML 正文）
+//   1. email 事件：接收任意 *@your-domain.example 的邮件，解码 MIME，存 KV（含 HTML 正文）
 //   2. GET /viewer?key=...        网页版邮件查看器（列表 + 渲染 HTML 正文，链接可点）
 //   3. GET /api/getcode?addr=...&key=...   JSON 取码（自动化用）
 //   4. GET /api/mails?key=...     JSON 邮件列表
@@ -12,9 +12,9 @@
 // v4：收信全程分段容错——解析/存储任何一步失败都降级保存原始内容，错误进 /api/list，
 //     并 console.log 到 Worker Observability（Events 流可见）。
 
-const API_KEY = "asw_RLdO-4xPUeZ8Z2oG";           // 取码口令（自己保管）
+const API_KEY = process.env.MAILCODE_API_KEY || "REPLACE_WITH_YOUR_OWN_KEY";           // 取码口令（自己保管）
 const TTL = 86400;                                 // 邮件保留 1 天
-const EMAIL_DOMAIN = "szpuedu.dpdns.org";          // ← 你的域名
+const EMAIL_DOMAIN = process.env.MAILCODE_DOMAIN || "your-domain.example";          // ← 你的域名
 const NC = { "Cache-Control": "no-store" };        // 禁止浏览器缓存取码结果
 
 // ---------- 轻量 MIME 解码 ----------
