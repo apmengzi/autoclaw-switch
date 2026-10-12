@@ -2515,6 +2515,11 @@ def _launch_isolated_profile(profile_dir: Path) -> set:
     # 登录添加 = 全新身份；活动打卡 = 保留账号自己的身份（调用方已拷入）
     if not (profile_dir / "identity" / "device.json").is_file():
         _prepare_isolated_identity(profile_dir)
+    # 预造 os_crypt 主密钥（Local State）。没有它时客户端会**自己现造一把**并只存
+    # 在进程内存/临时位置，登录完成后 auth.json 里的 token 用那把密钥加密，我们
+    # 事后解不开（2026-10-12 实测：slatewalker 登录成功但凭证取不出，整份作废）。
+    # 预置后客户端直接用它加密 → 我们能解密 → 迟到凭证可抢救。
+    mint_local_state(profile_dir)
     # AutoClaw 的 gateway/openclaw 状态取自 os.homedir()，不随 userData 自动隔离。
     # 给子进程一个独立 home，并禁用系统 Credential Manager 回退，避免再次污染主账号。
     isolated_home = profile_dir / "_home"
@@ -3384,8 +3389,8 @@ def _extract_oauth_failure(tmp: Path) -> str:
                     last_err = f"{d.get('code', '')} {str(d.get('msg', ''))[:120]}".strip()
                     if str(d.get("code")) == "631001":
                         last_err += ("（z.ai 后端拒绝此登录，与本地旧状态无关；"
-                                     "同日 unive.fun 邮箱号批量被封——换自有域名邮箱的账号"
-                                     "）")
+                                     "同日 unive.fun 邮箱号批量被封——换自有域名邮箱的账号，"
+                                     "如 szpuedu.dpdns.org）")
             except Exception:
                 last_err = line[-160:]
         return last_err
