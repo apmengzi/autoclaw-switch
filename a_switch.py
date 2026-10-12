@@ -1131,9 +1131,7 @@ def _autoclaw_roots():
     if env:
         roots.append(Path(env))
     for drive in ("C:", "D:", "E:", "F:"):
-        # Path("C:")/"x" 是盘符相对路径（无分隔符），必须补尾部分隔符才落到盘根
-        roots.append(Path(drive + "\\") / "AutoClaw")
-        roots.append(Path(drive + "\\") / "Program Files" / "AutoClaw")
+        roots.append(Path(drive + "\\") / "AutoClaw")          # Path("C:")/"x" 是盘符相对路径（无分隔符），必须补 \n        roots.append(Path(drive + "\\") / "Program Files" / "AutoClaw")
     roots.append(Path.home() / "AppData" / "Local" / "AutoClaw")
     return roots
 
@@ -2517,6 +2515,11 @@ def _launch_isolated_profile(profile_dir: Path) -> set:
     # 登录添加 = 全新身份；活动打卡 = 保留账号自己的身份（调用方已拷入）
     if not (profile_dir / "identity" / "device.json").is_file():
         _prepare_isolated_identity(profile_dir)
+    # 预造 os_crypt 主密钥（Local State）。没有它时客户端会**自己现造一把**并只存
+    # 在进程内存/临时位置，登录完成后 auth.json 里的 token 用那把密钥加密，我们
+    # 事后解不开（2026-10-12 实测：slatewalker 登录成功但凭证取不出，整份作废）。
+    # 预置后客户端直接用它加密 → 我们能解密 → 迟到凭证可抢救。
+    mint_local_state(profile_dir)
     # AutoClaw 的 gateway/openclaw 状态取自 os.homedir()，不随 userData 自动隔离。
     # 给子进程一个独立 home，并禁用系统 Credential Manager 回退，避免再次污染主账号。
     isolated_home = profile_dir / "_home"
@@ -3386,8 +3389,8 @@ def _extract_oauth_failure(tmp: Path) -> str:
                     last_err = f"{d.get('code', '')} {str(d.get('msg', ''))[:120]}".strip()
                     if str(d.get("code")) == "631001":
                         last_err += ("（z.ai 后端拒绝此登录，与本地旧状态无关；"
-                                     "同日 unive.fun 邮箱号批量被封——换自有域名邮箱的账号"
-                                     "）")
+                                     "同日 unive.fun 邮箱号批量被封——换自有域名邮箱的账号，"
+                                     "如 szpuedu.dpdns.org）")
             except Exception:
                 last_err = line[-160:]
         return last_err
@@ -3997,19 +4000,17 @@ RELAY_TOKEN = "autoclaw-local"
 ZCODE_PROVIDER_ID = "autoclaw-glm-provider"
 ZCODE_PROVIDER_NAME = "AutoClaw"
 ZCODE_BASE_URL = f"http://127.0.0.1:{RELAY_PORT}"
-# (ZCode 模型 id, route, 支持视觉, contextWindow) —— 视觉矩阵来自逐路由实测。
-# 第一列是对外规范名（见 models-catalog.json 命名规范）：全小写、无路由前缀；
-# 旧 TitleCase 名仍被 relay 的 normalizeRoute 宽容解析，双向兼容。
+# (ZCode 显示名, route, 支持视觉, contextWindow) —— 视觉矩阵来自逐路由实测
 ZCODE_MODELS = [
-    ("glm-5.3",             "zaicoding_glm-5.3",              False, 500000),
+    ("GLM-5.3",             "zaicoding_glm-5.3",              False, 500000),
     # 2026-09-29 起本机账号的模型目录里 tdpsk_deepseek-* 两条被上游移除
     # （runtime/model-catalog/remote-snapshot.json 只剩 4 个模型），请求回 400 非法模型。
-    # 权益恢复后把下面两行取消注释加回来即可（测试脚本会忽略注释掉的条目）：
-    # ("deepseek-v4.1-flash", "tdpsk_deepseek-v4-flash-202605", True,  500000),
-    # ("deepseek-v4-pro",     "tdpsk_deepseek-v4-pro-202606",   False, 500000),
-    ("glm-5.3-flash",       "zai_glm-5.3-flash",              True,  500000),
-    ("auto",                "zai_auto",                       True,  500000),
-    ("auto-fast",           "zai_auto-fast",                  True,  500000),
+    # 权益恢复后把下面两行加回来即可：
+    # ("Deepseek-V4.1-Flash", "tdpsk_deepseek-v4-flash-202605", True,  500000),
+    # ("DeepSeek-V4-Pro",     "tdpsk_deepseek-v4-pro-202606",   False, 500000),
+    ("GLM-5.3-Flash",       "zai_glm-5.3-flash",              True,  500000),
+    ("Auto",                "zai_auto",                       True,  500000),
+    ("Auto-Fast",           "zai_auto-fast",                  True,  500000),
 ]
 
 
