@@ -1125,14 +1125,26 @@ def cmd_export(out_dir: str):
 
 # ---------------- 账号切换（仿 Z·SWITCH） ----------------
 def _autoclaw_roots():
-    """AutoClaw 可能的安装根目录：环境变量 > 盘符扫描 > 常见路径。"""
+    """AutoClaw 可能的安装根目录：环境变量 > 盘符扫描 > 常见路径。
+
+    2026-10-12 扩充：覆盖国内版/国际版 2.x 的常见安装位置（客户端不再固定装
+    在 <盘符>:\\AutoClaw，本机就在 D:\\AutoClawCN\\AutoClaw 与 D:\\AutoClawCN\\AutoClaw2）。
+    """
     roots = []
     env = os.environ.get("AUTOCLAW_HOME")
     if env:
         roots.append(Path(env))
     for drive in ("C:", "D:", "E:", "F:"):
-        roots.append(Path(drive + "\\") / "AutoClaw")          # Path("C:")/"x" 是盘符相对路径（无分隔符），必须补 \n        roots.append(Path(drive + "\\") / "Program Files" / "AutoClaw")
+        base = Path(drive + "\\")     # Path("C:")/"x" 是盘符相对路径（无分隔符），必须补 \
+        roots.append(base / "AutoClaw")
+        roots.append(base / "Program Files" / "AutoClaw")
+        # 国内版/国际版 2.x 常见落点
+        roots.append(base / "AutoClawCN" / "AutoClaw")
+        roots.append(base / "AutoClawCN" / "AutoClaw2")
+        roots.append(base / "ac-new" / "portable")
     roots.append(Path.home() / "AppData" / "Local" / "AutoClaw")
+    roots.append(Path.home() / "AppData" / "Local" / "Programs" / "AutoClaw")
+    roots.append(Path.home() / "AppData" / "Local" / "Programs" / "AutoClaw2")
     return roots
 
 AUTOCLAW_EXE_CANDIDATES = [r / "AutoClaw.exe" for r in _autoclaw_roots()] \
@@ -4158,6 +4170,82 @@ def relay_smoke_test() -> dict:
         u = d.get("usage") or {}
         text = f"model={d.get('model')} out={u.get('output_tokens')}t"
     return {"ok": r.status == 200 and bool(blocks), "reply": text[:60]}
+
+
+def cn_bridge_sync(say=None) -> dict:
+    """国内版（2.x CN）凭证桥接：读 AutoClaw-official 的加密凭证 → relay 的 CN 凭证源。
+
+    国内版登录走 App 内手机号，没有可自动化的 OAuth 窗口，因此不提供"加号"，
+    只做**凭证桥接**：用户在官方国内版客户端里登录一次，本函数把凭证解密同步给
+    relay（lane=cn，走 zhipuai.cn 加速域），ZCode 即可用国内号积分反代。
+
+    凭证结构（2.x 统一）：<profile>/accounts/<hash>/account-credentials.enc
+      = b"v10" + nonce(12) + AESGCM(ct+tag)，密钥在 <profile>/Local State（DPAPI 包裹）。
+    纯文件读取，零网络出站。
+    """
+    say = say or (lambda m: None)
+    appdata = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
+    src = appdata / "AutoClaw-official"
+    if not (src / "Local State").is_file():
+        return {"ok": False, "error": "未找到国内版客户端数据目录（AutoClaw-official）。"
+                                     "请先安装并登录国内版 AutoClaw。"}
+    acc_root = src / "accounts"
+    if not acc_root.is_dir():
+        return {"ok": False, "error": "国内版还没登录过（没有 accounts 目录）。"
+                                     "请在官方国内版客户端里用手机号登录一次，再点本按钮。"}
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except Exception as e:
+        return {"ok": False, "error": f"缺少 cryptography 库：{e}"}
+
+    try:
+        key = _os_crypt_key(src)
+    except Exception as e:
+        return {"ok": False, "error": f"读取本机密钥失败（DPAPI）：{type(e).__name__}: {e}"}
+
+    synced = []
+    for acc_dir in acc_root.iterdir():
+        enc = acc_dir / "account-credentials.enc"
+        if not enc.is_file():
+            continue
+        try:
+            blob = enc.read_bytes()
+            if blob[:3] != b"v10":
+                continue
+            plain = AESGCM(key).decrypt(blob[3:15], blob[15:], None)
+            cred = json.loads(plain.decode("utf-8"))
+        except Exception as e:
+            say(f"跳过 {acc_dir.name[:8]}：解密失败 {type(e).__name__}")
+            continue
+        prof = {}
+        prof_p = acc_dir / "account-profile.json"
+        if prof_p.is_file():
+            try:
+                prof = json.loads(prof_p.read_text(encoding="utf-8")).get("profile", {}) or {}
+            except Exception:
+                prof = {}
+        auth = {
+            "lane": "cn",
+            "token": cred.get("accessToken"),
+            "refreshToken": cred.get("refreshToken"),
+            "deviceId": cred.get("deviceId") or "",
+            "userInfo": {
+                "user_id": cred.get("userId") or prof.get("numericUserId"),
+                "user_name": cred.get("nickname") or prof.get("displayName") or "",
+                "email": cred.get("email") or prof.get("email") or "",
+            },
+        }
+        out_dir = relay_home() / "auth-compat"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "auth-cn.json").write_text(
+            json.dumps(auth, ensure_ascii=False, indent=2), encoding="utf-8")
+        synced.append(str(cred.get("nickname") or cred.get("userId") or acc_dir.name)[:20])
+        say(f"已桥接国内号：{synced[-1]}")
+
+    if not synced:
+        return {"ok": False, "error": "没找到可用的国内版凭证。请确认已在官方国内版客户端登录。"}
+    return {"ok": True, "synced": synced,
+            "note": "国内版凭证已同步（CN 线）。relay 会按 lane=cn 走 zhipuai.cn 线路。"}
 
 
 def relay_oneclick_setup() -> dict:
