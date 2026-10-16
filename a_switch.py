@@ -230,9 +230,16 @@ def build_identity_bundle(src_dir: Path) -> dict:
 
 
 def write_identity_set(live_dir: Path, bundle: dict, keep_rollback: bool = True) -> Path | None:
-    """把整套身份原子写进活动目录；返回存放原文件的回滚目录（None=没备份）。"""
+    """把整套身份原子写进活动目录；返回存放原文件的回滚目录（None=没备份）。
+
+    ⚠️ 回滚目录**绝不能建在活动目录里**（2026-10-13 修正）：它保存的是被换掉的
+    那个账号的完整身份（auth.json/device.json/user-cache），若留在 AutoClaw 活动
+    目录（Roaming\\autoclaw\\）内，客户端可能把它当作自己的状态读取/上报 —— 于是
+    "桌面端已切到新号，但活动目录里还躺着封禁号的设备指纹"，风控会把它算作该设备
+    用过封禁号。改为写到工作区 accounts/_rollback_archive/（活动目录之外）。
+    """
     live_dir = Path(live_dir)
-    rb = live_dir / f"aswitch-rollback-{time.strftime('%Y%m%d-%H%M%S')}"
+    rb = ACCOUNTS_DIR / "_rollback_archive" / f"aswitch-rollback-{time.strftime('%Y%m%d-%H%M%S')}"
     backed = False
     if keep_rollback:
         for rel in bundle:
@@ -2537,7 +2544,10 @@ def _launch_isolated_profile(profile_dir: Path) -> set:
     isolated_home = profile_dir / "_home"
     isolated_home.mkdir(parents=True, exist_ok=True)
     # 字符串形式传命令，避免 list2cmdline 把整段再包一层引号
-    cmd = f'cmd /c start "" "{exe}" "--user-data-dir={profile_dir}"'
+    # 2026-10-16：附带 CDP 调试端口，供"自动登录"用（点「通过Z.ai登录」+ 自动授权）。
+    # 端口可被 _ISOLATED_CDP_PORT 覆盖；不需要自动化时也开着无害（只监听 127.0.0.1）。
+    cdp_port = int(os.environ.get("ASWITCH_CDP_PORT", "9337"))
+    cmd = f'cmd /c start "" "{exe}" "--user-data-dir={profile_dir}" "--remote-debugging-port={cdp_port}"'
     # AutoClaw 自身在 app ready 前会优先读取这个变量并 setPath("userData")。
     # 同时传命令行参数，确保 Electron 与应用层看到的是同一个临时目录；
     # 只依赖其中一层时，升级后的客户端可能把 auth.json 落回主 profile。
@@ -3741,14 +3751,28 @@ def switch_account(target: Account, on_progress=None, watch_seconds: int = 30) -
         return result
 
     # 0. 先保全当前账号（它的 refreshToken 可能刚被 App 轮换过）
+    # ⚠️ 但**已封禁的号不回写**（2026-10-13）：否则会把死号档案"复活"回 accounts/，
+    # 下次导出池又把它捞回来（实测 burnerhawk 就这么复活过一次）。
     live_acc = load_account(live_dir)
     if live_acc and live_acc.user_id:
-        report(f"当前账号：{live_acc.nickname}，先把新鲜凭证存回它自己的存档…")
+        banned = set()
         try:
-            sync_live_to_archive(live_acc)
-            report("✓ 当前账号凭证已回写存档")
-        except Exception as e:
-            report(f"! 回写存档失败（不影响本次切换）：{type(e).__name__}: {e}")
+            bl = ACCOUNTS_DIR.parent / "aswitch_pool_banned.json"
+            if bl.is_file():
+                raw = json.loads(bl.read_text(encoding="utf-8"))
+                banned = set(raw if isinstance(raw, list)
+                             else (raw.get("banned") or raw.get("uids") or []))
+        except Exception:
+            banned = set()
+        if str(live_acc.user_id) in banned:
+            report(f"当前账号 {live_acc.nickname} 在封禁名单里，跳过回写（不复活死号档案）")
+        else:
+            report(f"当前账号：{live_acc.nickname}，先把新鲜凭证存回它自己的存档…")
+            try:
+                sync_live_to_archive(live_acc)
+                report("✓ 当前账号凭证已回写存档")
+            except Exception as e:
+                report(f"! 回写存档失败（不影响本次切换）：{type(e).__name__}: {e}")
     else:
         report("- 活动目录当前没有可解析的登录身份")
 
@@ -4150,6 +4174,44 @@ def zcode_register_provider() -> dict:
                                "optionSpecs": {"reasoningLevel": {"values": ["low", "high", "max"]}}}})
     cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True, "models": [m[0] for m in ZCODE_MODELS]}
+
+
+def endpoint_info() -> dict:
+    """反代端点信息：给用户拿去配置到别处（OpenAI/Anthropic 客户端、别的 IDE 等）。
+
+    返回 baseUrl / token / 协议 / 模型清单 / 当前上游通道 / 健康状态。
+    纯本地查询（一次 /health），不做任何出站。
+    """
+    info = {
+        "baseUrl_openai": f"http://127.0.0.1:{RELAY_PORT}/v1",
+        "baseUrl_anthropic": f"http://127.0.0.1:{RELAY_PORT}",
+        "token": RELAY_TOKEN,
+        "port": RELAY_PORT,
+        "protocols": ["openai-chat-completions", "anthropic-messages", "openai-responses"],
+        "models": [
+            {"name": m[0], "route": m[1], "vision": m[2], "contextWindow": m[3]}
+            for m in ZCODE_MODELS
+        ],
+        "health": None,
+        "upstream": None,
+        "gateway": None,
+        "notes": [
+            "OpenAI 兼容客户端：baseUrl 填 baseUrl_openai，apiKey 填 token",
+            "Anthropic 兼容客户端：baseUrl 填 baseUrl_anthropic（自动带 /v1/messages）",
+            "模型名用 models[].name（如 GLM-5.3-Flash）",
+        ],
+    }
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"http://127.0.0.1:{RELAY_PORT}/health", timeout=5) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+        info["health"] = d.get("status")
+        info["upstream"] = d.get("upstream")
+        info["gateway"] = d.get("gateway") if "gateway" in d else (
+            "openclaw gateway" if d.get("upstream") == "gateway" else None)
+    except Exception as e:
+        info["health"] = f"unreachable: {type(e).__name__}"
+    return info
 
 
 def relay_smoke_test() -> dict:

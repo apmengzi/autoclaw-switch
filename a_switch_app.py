@@ -1066,17 +1066,11 @@ class Api:
         threading.Thread(target=work, daemon=True).start()
         return {"ok": True}
 
-    def cn_bridge(self):
-        """国内版凭证桥接：读 AutoClaw-official 的加密凭证同步给反代（CN 线）。"""
+    def endpoint_info(self):
+        """反代端点信息（供用户把算力配置到别处）。"""
         try:
-            r = a_switch.cn_bridge_sync(say=log)
-            if r.get("ok"):
-                log("✅ " + str(r.get("note", "")))
-            else:
-                log("✗ " + str(r.get("error")))
-            return r
+            return {"ok": True, "info": a_switch.endpoint_info()}
         except Exception as e:
-            log(f"✗ 国内版桥接异常 {type(e).__name__}: {e}")
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
     def relay_status(self):
@@ -1286,7 +1280,6 @@ td.st{color:var(--ink-mute);font-size:11.5px;white-space:nowrap}
     <button class="sm ghost" onclick="App.sweep()" title="为每个账号在隔离窗口登录打卡">🎯 打卡</button>
     <button class="sm ghost" onclick="App.launchAc()">启动</button>
     <button class="sm ghost" onclick="App.relaySetup()" title="部署反代并注册到 ZCode（幂等）">⚡ 一键反代</button>
-    <button class="sm ghost" onclick="App.cnBridge()" title="国内版（手机号登录）凭证桥接：先在官方国内版客户端登录，再点这里把凭证同步给反代">🇨🇳 国内版桥接</button>
     <button class="sm ghost" onclick="App.relay()" title="查看反代状态">反代状态</button>
     <button class="sm ghost" onclick="App.relayWarm()" title="新号建议点一次：8 轮真实对话建立用量基线">🔥 暖号</button>
   </div>
@@ -1333,6 +1326,12 @@ td.st{color:var(--ink-mute);font-size:11.5px;white-space:nowrap}
   </div>
 
   <div class="card">
+    <h2>🔌 反代网关信息 <span class="muted" style="font-size:12px">（把算力接到别处：OpenAI / Anthropic 兼容客户端都能用）</span>
+      <button class="sm ghost" style="float:right" onclick="App.endpointInfo()">刷新</button></h2>
+    <div id="epInfo" class="muted">点「刷新」查看端点地址与密钥…</div>
+  </div>
+
+  <div class="card">
     <h2>操作日志</h2>
     <div id="log">就绪。</div>
   </div>
@@ -1353,7 +1352,6 @@ const I18N_EN = {
   "启动":"Launch", "⚡ 一键反代":"⚡ One-click relay",
   "部署反代并注册到 ZCode（幂等）":"Deploy relay and register into ZCode (idempotent)",
   "反代状态":"Relay status", "查看反代状态":"Show relay status",
-  "🇨🇳 国内版桥接":"🇨🇳 CN bridge", "国内版桥接":"CN bridge",
   "🔥 暖号":"🔥 Warm-up",
   "新号建议点一次：8 轮真实对话建立用量基线":"Run once for new accounts: 8 real conversations to build a human-shaped usage baseline",
   "账号":"Accounts", "⚡ 一键领取全部积分":"⚡ Claim all points",
@@ -1791,15 +1789,33 @@ const App={
     const r=await window.pywebview.api.relay_setup();
     if(r.ok) toast("进行中，看操作日志");
   },
-  async cnBridge(){
-    if(!confirm("国内版桥接：读取你已登录的国内版 AutoClaw（手机号登录）凭证，同步给本地反代（CN 线）。\n\n前提：已安装国内版客户端并登录一次。继续？")) return;
-    const r=await window.pywebview.api.cn_bridge();
-    toast(r.ok?("已桥接："+(r.synced||[]).join("、")):("失败："+(r.error||"")));
-  },
   async relayWarm(){
     if(!confirm("对新号跑 8 轮真实对话建立用量基线（防止被判机器号）。继续？")) return;
     const r=await window.pywebview.api.relay_warm();
     if(r.ok) toast("暖号进行中，看操作日志");
+  },
+  async endpointInfo(){
+    const box = $("#epInfo");
+    box.textContent = "读取中…";
+    const r = await window.pywebview.api.endpoint_info();
+    if(!r || !r.ok){ box.textContent = "读取失败：" + ((r && r.error) || "未知"); return; }
+    const d = r.info || {};
+    const healthy = d.health === "ok";
+    const rows = [
+      ["状态", healthy ? ("✅ 运行中（上游：" + (d.upstream || "?") + "）") : ("⚠️ " + (d.health || "未知"))],
+      ["OpenAI 兼容 baseUrl", d.baseUrl_openai],
+      ["Anthropic 兼容 baseUrl", d.baseUrl_anthropic],
+      ["API Key / Token", d.token],
+      ["支持协议", (d.protocols || []).join(", ")],
+      ["可用模型", (d.models || []).map(m => m.name + (m.vision ? "(含视觉)" : "")).join(", ")],
+    ];
+    let html = '<table style="width:100%;border-collapse:collapse">';
+    for(const [k,v] of rows){
+      html += '<tr><td style="padding:4px 8px;color:#888;white-space:nowrap;vertical-align:top">'+k+'</td>'
+           +  '<td style="padding:4px 8px;font-family:Consolas,monospace;word-break:break-all">'+(v||"-")+'</td></tr>';
+    }
+    html += '</table><div class="muted" style="margin-top:8px;font-size:12px">用法：把上面的 baseUrl 和 Token 填进任意 OpenAI/Anthropic 兼容客户端即可使用本机 AutoClaw 算力（模型名用「可用模型」里的名字）。</div>';
+    box.innerHTML = html;
   },
   async loginAdd(){
     const btn = $("#btnLoginAdd");

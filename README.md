@@ -25,6 +25,28 @@ AutoClaw 的多账号管理工具，附带一个本地反代，能把 AutoClaw �
 4. **2.x 适配**（新增）。AutoClaw 2.0.1 官方渠道改用了新的凭证存储、加速网关和风控闸门，本分支做了完整逆向适配：凭证自动桥接与轮换跟随、OpenAI SDK 指纹与会话头注入、persona system 替换、原生 https 传输层，并新增 Electron 桌面控制台管理全部运行状态。
 
 
+
+## 🔌 反代网关信息（把算力接到别处用）
+
+A-SWITCH 跑起来后，本机会有一个**标准 OpenAI / Anthropic 兼容端点**，你可以把它配到任何支持这两种协议的客户端（别的 IDE、ChatBox、OpenAI SDK 脚本等）：
+
+| 项 | 值 |
+|---|---|
+| OpenAI 兼容 baseUrl | `http://127.0.0.1:18766/v1` |
+| Anthropic 兼容 baseUrl | `http://127.0.0.1:18766` |
+| API Key | `autoclaw-local` |
+| 可用模型 | `GLM-5.3` / `GLM-5.3-Flash` / `Auto` / `Auto-Fast` |
+
+**A-SWITCH 界面里的「🔌 反代网关信息」卡片会实时显示这些值**（含当前上游通道与健康状态），点「刷新」即可。
+
+### 上游通道说明（v1.3.0 起）
+反代默认走 **AutoClaw 自带的 openclaw gateway**（`127.0.0.1:18789`，官方 OpenAI 端点，零逆向）：
+- **不需要**我们复刻任何签名/指纹 —— 全部由 AutoClaw 官方进程处理
+- 需要在 AutoClaw 配置里开启一次：`gateway.http.endpoints.chatCompletions.enabled = true`（A-SWITCH 会自动检查并提示）
+- gateway 可以**独立运行**（不必开着桌面端 UI）
+- 若 gateway 不可用，自动回退到旧的云端直连路径
+
+
 ## 🇨🇳 国内版 AutoClaw 用法（手机号登录）
 
 国内版（`zhipuai.cn` 线路）与海外版是**两套账号宇宙**，凭证与网关都不通用。国内版**只能手机号登录**、无法自动化加号，因此用法是「**手动登录一次 + 一键桥接**」：

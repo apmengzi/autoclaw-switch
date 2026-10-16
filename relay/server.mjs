@@ -341,6 +341,77 @@ async function isBroker(port, timeoutMs = DISCOVERY_TIMEOUT_MS) {
 }
 
 const brokerCache = { base: "", at: 0 };
+
+// ---------- openclaw gateway 通道（2026-10-17）----------
+// AutoClaw 桌面端自带 openclaw gateway（默认 127.0.0.1:18789）。开启
+// gateway.http.endpoints.chatCompletions.enabled=true 后它就是标准 OpenAI 端点，
+// 由官方进程负责全部签名/指纹/凭证 → 我们零逆向。
+// 它也能独立运行（无需桌面端 UI）：node gateway-launcher.cjs gateway run --port 18789
+// token 在 ~/.openclaw-autoclaw/.gateway-token。
+const GW_CACHE = { base: "", token: "", at: 0 };
+const GW_TTL_MS = 60_000;
+
+function readOpenclawGatewayToken() {
+  try {
+    return fs.readFileSync(path.join(os.homedir(), ".openclaw-autoclaw", ".gateway-token"), "utf8").trim();
+  } catch { return ""; }
+}
+
+async function isGateway(base) {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 3_000);
+    const r = await fetch(`${base}/v1/models`, {
+      headers: { Authorization: `Bearer ${readOpenclawGatewayToken()}` }, signal: ctl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return false;
+    const j = await r.json().catch(() => null);
+    return Boolean(j && Array.isArray(j.data) && j.data.some((m) => String(m.id || "").startsWith("openclaw")));
+  } catch { return false; }
+}
+
+async function getGatewayBase(force = false) {
+  const now = Date.now();
+  if (!force && GW_CACHE.base && now - GW_CACHE.at < GW_TTL_MS) return GW_CACHE.base;
+  const cands = [];
+  if (process.env.AUTOCLAW_GATEWAY_URL) cands.push(process.env.AUTOCLAW_GATEWAY_URL.replace(/\/+$/, ""));
+  cands.push("http://127.0.0.1:18789");
+  for (const b of cands) {
+    if (await isGateway(b)) {
+      GW_CACHE.base = b; GW_CACHE.token = readOpenclawGatewayToken(); GW_CACHE.at = now;
+      log("gateway discovered:", b);
+      return b;
+    }
+  }
+  GW_CACHE.base = ""; GW_CACHE.at = now;
+  return "";
+}
+
+// 把请求转成 gateway 的 OpenAI 兼容格式：model=openclaw + x-openclaw-model 指定底层模型
+async function callGateway(base, route, payload, opts, externalSignal) {
+  const token = GW_CACHE.token || readOpenclawGatewayToken();
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), Number(process.env.AUTOCLAW_GATEWAY_TIMEOUT_MS || 900_000));
+  if (externalSignal) {
+    if (externalSignal.aborted) ctl.abort();
+    else externalSignal.addEventListener("abort", () => ctl.abort(), { once: true });
+  }
+  try {
+    return await fetch(`${base}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "x-openclaw-model": `zai/${route}`,
+      },
+      body: JSON.stringify({ ...payload, model: "openclaw" }),
+      signal: ctl.signal,
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
 async function getBrokerBase(force = false) {
   const now = Date.now();
   if (!force && brokerCache.base && now - brokerCache.at < BROKER_TTL_MS) return brokerCache.base;
@@ -1522,6 +1593,11 @@ async function readDetail(resp, max = 500) {
  *  AUTOCLAW_POOL_MODE=broker：需要时退回"broker 优先"的老行为（调试/对比用）。
  *  AUTOCLAW_POOL_MODE=off：只用单凭证直连，不用账号池。 */
 async function getUpstream(force = false) {
+  // ⭐ gateway 通道优先（官方端点，零逆向）。AUTOCLAW_GATEWAY=0 可关闭。
+  if (process.env.AUTOCLAW_GATEWAY !== "0") {
+    const gw = await getGatewayBase(force);
+    if (gw) return { kind: "gateway", base: gw };
+  }
   // broker 优先只在显式要求时启用；默认跳过它（那条路必 406，见上方注释）
   if (POOL_MODE === "broker") {
     // broker 因额度打空被标记冷却时，仍要能切到账号池（否则强制 broker 模式下会卡死）
@@ -1550,6 +1626,7 @@ async function callUpstream(up, route, payload, opts) {
     r._probeLocal = true;
     return r;
   }
+  if (up.kind === "gateway") return callGateway(up.base, route, payload, opts, opts && opts.externalSignal);
   return up.kind === "cloud"
     ? (up.pool ? callCloudPool(route, payload, opts) : callCloud(route, payload, opts, null, opts && opts.externalSignal))
     : callBroker(up.base, route, payload, opts, opts && opts.externalSignal);
