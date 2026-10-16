@@ -4176,6 +4176,68 @@ def zcode_register_provider() -> dict:
     return {"ok": True, "models": [m[0] for m in ZCODE_MODELS]}
 
 
+def ensure_gateway_endpoint(say=None) -> dict:
+    """确保 AutoClaw 的 openclaw gateway 开启了 OpenAI 兼容端点（幂等）。
+
+    为什么要开：反代默认走 gateway 通道（官方端点，零逆向）。该端点默认关闭，
+    需在 ~/.openclaw-autoclaw/openclaw.json 写
+      gateway.http.endpoints.chatCompletions.enabled = true
+    并持久化 token（否则每次启动 token 都变，反代连不上）。
+
+    纯文件操作，改前备份；已是目标状态则不动。
+    """
+    say = say or (lambda m: None)
+    cfg = Path.home() / ".openclaw-autoclaw" / "openclaw.json"
+    if not cfg.is_file():
+        return {"ok": False, "error": "未找到 AutoClaw 的 openclaw 配置（~/.openclaw-autoclaw/openclaw.json）。"
+                                     "请先安装并至少启动一次 AutoClaw。"}
+    try:
+        d = json.loads(cfg.read_text(encoding="utf-8-sig"))
+    except Exception as e:
+        return {"ok": False, "error": f"配置解析失败：{type(e).__name__}: {e}"}
+    gw = d.setdefault("gateway", {})
+    http = gw.setdefault("http", {})
+    eps = http.setdefault("endpoints", {})
+    cc = eps.setdefault("chatCompletions", {})
+    need_endpoint = cc.get("enabled") is not True
+    need_auth = (gw.get("auth") or {}).get("mode") != "token"
+    if not need_endpoint and not need_auth:
+        return {"ok": True, "changed": False, "note": "gateway 端点与 token 已是目标状态"}
+    # 备份
+    bak = cfg.with_name(cfg.name + f".bak-aswitch-{time.strftime('%Y%m%d-%H%M%S')}")
+    try:
+        bak.write_bytes(cfg.read_bytes())
+    except Exception as e:
+        return {"ok": False, "error": f"备份失败：{e}"}
+    if need_endpoint:
+        cc["enabled"] = True
+        say("已开启 gateway OpenAI 兼容端点")
+    if need_auth:
+        # 持久化 token：优先复用现有 .gateway-token，否则生成一个
+        tokfile = Path.home() / ".openclaw-autoclaw" / ".gateway-token"
+        tok = ""
+        try:
+            tok = tokfile.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+        if not tok:
+            import secrets
+            tok = secrets.token_hex(32)
+            try:
+                tokfile.write_text(tok, encoding="utf-8")
+            except Exception:
+                pass
+        gw.setdefault("auth", {})["mode"] = "token"
+        gw["auth"]["token"] = tok
+        say("已持久化 gateway token（重启后不变）")
+    try:
+        cfg.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        return {"ok": False, "error": f"写入失败：{e}（备份在 {bak.name}）"}
+    return {"ok": True, "changed": True, "backup": bak.name,
+            "note": "配置已更新，重启 AutoClaw / gateway 后生效"}
+
+
 def endpoint_info() -> dict:
     """反代端点信息：给用户拿去配置到别处（OpenAI/Anthropic 客户端、别的 IDE 等）。
 
@@ -4311,8 +4373,17 @@ def cn_bridge_sync(say=None) -> dict:
 
 
 def relay_oneclick_setup() -> dict:
-    """一键反代总入口：凭证 → relay → ZCode 注册 → 验证。幂等，可重复点。"""
+    """一键反代总入口：gateway 配置 → 凭证 → relay → ZCode 注册 → 验证。幂等，可重复点。"""
     steps = []
+    # 0) 确保 openclaw gateway 的 OpenAI 端点已开（反代默认走这条零逆向通道）
+    try:
+        g = ensure_gateway_endpoint(say=steps.append)
+        if g.get("ok"):
+            steps.append("gateway 端点就绪" if not g.get("changed") else g.get("note", "gateway 配置已更新"))
+        else:
+            steps.append(f"gateway 配置跳过（{g.get('error')}）")
+    except Exception as e:
+        steps.append(f"gateway 配置异常（{type(e).__name__}），继续走直连通道")
     if not relay_is_up():
         steps.append("relay 启动")
         r = relay_start()
