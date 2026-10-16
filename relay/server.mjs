@@ -27,7 +27,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { randomUUID, createHash, timingSafeEqual } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 
 // ---------------- 配置 ----------------
 // 监听地址：默认 0.0.0.0（dsh 容器需经 192.168.65.254 访问）；
@@ -41,37 +41,6 @@ const STATE_DIR = process.env.AUTOCLAW_STATE_DIR || path.join(os.homedir(), ".op
 const TOKEN_FILE = path.join(STATE_DIR, ".gateway-token");
 const HEADERS_FILE = path.join(STATE_DIR, "request-headers.json");
 const MODEL_CONFIG_URL = "https://autoglm-api.autoglm.ai/autoclaw-proxy/proxy/autoclaw-model-config";
-
-// ---------------- 入站 api_key 闸门（A/B 档反代，2026-10-07） ----------------
-// 此前只有「非 loopback 监听才要 PROXY_TOKEN」——本机任何进程都能匿名打推理。
-// 现在把注册的 access.apiKey 真正当成入站钥匙：模型服务路径（/v1/messages、
-// /v1/chat/completions、/v1/responses、/v1/models、/routes）必须带钥匙，
-// 钥匙从 x-api-key 或 Authorization: Bearer 取，常数时间比对；
-// 健康探针 /health、业务桥 /fwd、管理 /admin/* 不在闸门内（桌面端与 GUI 后端零改动）。
-// 默认开启；设 AUTOCLAW_INBOUND_AUTH=0 退回旧行为（离线纯函数测试用）。
-// 钥匙集合 = 内置 autoclaw-local（= ZCode 注册值）+ PROXY_TOKEN（兼容 dsh 经
-// 192.168.65.254 的 Bearer）+ AUTOCLAW_INBOUND_KEYS 逗号追加（轮换/多把）。
-const INBOUND_AUTH = process.env.AUTOCLAW_INBOUND_AUTH !== "0";
-const INBOUND_KEYS = new Set(
-  ["autoclaw-local", PROXY_TOKEN]
-    .concat((process.env.AUTOCLAW_INBOUND_KEYS || "").split(","))
-    .map((s) => s.trim()).filter(Boolean),
-);
-function isModelPath(p) {
-  return p.endsWith("/messages") || p.endsWith("/completions") || p.endsWith("/responses")
-    || p === "/v1/models" || p === "/models" || p === "/routes";
-}
-function inboundKeyOk(req) {
-  const given = (req.headers["x-api-key"]
-    || String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "")).trim();
-  if (!given) return false;
-  for (const k of INBOUND_KEYS) {
-    const a = Buffer.from(given, "utf8"), b = Buffer.from(k, "utf8");
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  return false;
-}
-
 
 const BASE_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 // 离线验收会同时起十几个实例，它们**必须**别往生产 server.log 里写：
@@ -372,6 +341,77 @@ async function isBroker(port, timeoutMs = DISCOVERY_TIMEOUT_MS) {
 }
 
 const brokerCache = { base: "", at: 0 };
+
+// ---------- openclaw gateway 通道（2026-10-17）----------
+// AutoClaw 桌面端自带 openclaw gateway（默认 127.0.0.1:18789）。开启
+// gateway.http.endpoints.chatCompletions.enabled=true 后它就是标准 OpenAI 端点，
+// 由官方进程负责全部签名/指纹/凭证 → 我们零逆向。
+// 它也能独立运行（无需桌面端 UI）：node gateway-launcher.cjs gateway run --port 18789
+// token 在 ~/.openclaw-autoclaw/.gateway-token。
+const GW_CACHE = { base: "", token: "", at: 0 };
+const GW_TTL_MS = 60_000;
+
+function readOpenclawGatewayToken() {
+  try {
+    return fs.readFileSync(path.join(os.homedir(), ".openclaw-autoclaw", ".gateway-token"), "utf8").trim();
+  } catch { return ""; }
+}
+
+async function isGateway(base) {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 3_000);
+    const r = await fetch(`${base}/v1/models`, {
+      headers: { Authorization: `Bearer ${readOpenclawGatewayToken()}` }, signal: ctl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return false;
+    const j = await r.json().catch(() => null);
+    return Boolean(j && Array.isArray(j.data) && j.data.some((m) => String(m.id || "").startsWith("openclaw")));
+  } catch { return false; }
+}
+
+async function getGatewayBase(force = false) {
+  const now = Date.now();
+  if (!force && GW_CACHE.base && now - GW_CACHE.at < GW_TTL_MS) return GW_CACHE.base;
+  const cands = [];
+  if (process.env.AUTOCLAW_GATEWAY_URL) cands.push(process.env.AUTOCLAW_GATEWAY_URL.replace(/\/+$/, ""));
+  cands.push("http://127.0.0.1:18789");
+  for (const b of cands) {
+    if (await isGateway(b)) {
+      GW_CACHE.base = b; GW_CACHE.token = readOpenclawGatewayToken(); GW_CACHE.at = now;
+      log("gateway discovered:", b);
+      return b;
+    }
+  }
+  GW_CACHE.base = ""; GW_CACHE.at = now;
+  return "";
+}
+
+// 把请求转成 gateway 的 OpenAI 兼容格式：model=openclaw + x-openclaw-model 指定底层模型
+async function callGateway(base, route, payload, opts, externalSignal) {
+  const token = GW_CACHE.token || readOpenclawGatewayToken();
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), Number(process.env.AUTOCLAW_GATEWAY_TIMEOUT_MS || 900_000));
+  if (externalSignal) {
+    if (externalSignal.aborted) ctl.abort();
+    else externalSignal.addEventListener("abort", () => ctl.abort(), { once: true });
+  }
+  try {
+    return await fetch(`${base}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "x-openclaw-model": `zai/${route}`,
+      },
+      body: JSON.stringify({ ...payload, model: "openclaw" }),
+      signal: ctl.signal,
+    });
+  } finally {
+    clearTimeout(t);
+  }
+}
 async function getBrokerBase(force = false) {
   const now = Date.now();
   if (!force && brokerCache.base && now - brokerCache.at < BROKER_TTL_MS) return brokerCache.base;
@@ -1553,6 +1593,11 @@ async function readDetail(resp, max = 500) {
  *  AUTOCLAW_POOL_MODE=broker：需要时退回"broker 优先"的老行为（调试/对比用）。
  *  AUTOCLAW_POOL_MODE=off：只用单凭证直连，不用账号池。 */
 async function getUpstream(force = false) {
+  // ⭐ gateway 通道优先（官方端点，零逆向）。AUTOCLAW_GATEWAY=0 可关闭。
+  if (process.env.AUTOCLAW_GATEWAY !== "0") {
+    const gw = await getGatewayBase(force);
+    if (gw) return { kind: "gateway", base: gw };
+  }
   // broker 优先只在显式要求时启用；默认跳过它（那条路必 406，见上方注释）
   if (POOL_MODE === "broker") {
     // broker 因额度打空被标记冷却时，仍要能切到账号池（否则强制 broker 模式下会卡死）
@@ -1581,6 +1626,7 @@ async function callUpstream(up, route, payload, opts) {
     r._probeLocal = true;
     return r;
   }
+  if (up.kind === "gateway") return callGateway(up.base, route, payload, opts, opts && opts.externalSignal);
   return up.kind === "cloud"
     ? (up.pool ? callCloudPool(route, payload, opts) : callCloud(route, payload, opts, null, opts && opts.externalSignal))
     : callBroker(up.base, route, payload, opts, opts && opts.externalSignal);
@@ -2896,7 +2942,6 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 401, { error: { message: "unauthorized: invalid or missing proxy token" } });
     }
   }
-  // 入站 api_key 闸门见 OPTIONS 之后（预检请求不带钥匙，必须先放行 204）
 
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
@@ -2906,13 +2951,6 @@ const server = http.createServer(async (req, res) => {
       "Access-Control-Max-Age": "86400",
     });
     return res.end();
-  }
-
-  // 入站 api_key 闸门：模型服务路径（含 loopback）必须带钥匙；探针/业务桥/管理端点豁免
-  if (INBOUND_AUTH && isModelPath(pathname) && !inboundKeyOk(req)) {
-    const msg = "unauthorized: missing or invalid api key (x-api-key or Authorization: Bearer)";
-    if (pathname.endsWith("/messages")) return anthropicError(res, 401, msg, "authentication_error");
-    return openaiError(res, 401, msg, "invalid_request_error");
   }
 
   try {
