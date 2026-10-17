@@ -241,7 +241,7 @@ function scrub(s) {
     const start = open.index + open[0].length;
     const rest = out.slice(start);
     const endIdx = rest.search(/<\/autoclaw-\d+-response>/);
-    const encoded = (endIdx === -1 ? rest : rest.slice(0, endIdx)).replace(/["\\s].*$/, "");
+    const encoded = (endIdx === -1 ? rest : rest.slice(0, endIdx)).split(/[\s"<]/)[0];
     let brief = "";
     try {
       const outer = JSON.parse(decodeURIComponent(encoded));
