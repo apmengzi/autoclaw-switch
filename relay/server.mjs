@@ -389,6 +389,25 @@ async function getGatewayBase(force = false) {
 }
 
 // 把请求转成 gateway 的 OpenAI 兼容格式：model=openclaw + x-openclaw-model 指定底层模型
+// gateway 内置 agent 工具名。调用方再传同名工具 → gateway 报
+// "client tool name conflict: Bash, Edit, Read, Write" 并返回空流
+// （2026-10-17 实测：ZCode 124 个工具里含这几个名字，请求 3.3s 返回空响应）。
+// 对策：转发前加前缀改名，保留功能又避免冲突。
+const GW_RESERVED_TOOLS = new Set(["Bash", "Edit", "Read", "Write"]);
+function renameConflictingTools(payload) {
+  if (!payload || !Array.isArray(payload.tools)) return payload;
+  let changed = false;
+  const tools = payload.tools.map((t) => {
+    const nm = (t && t.function && t.function.name) || "";
+    if (GW_RESERVED_TOOLS.has(nm)) {
+      changed = true;
+      return { ...t, function: { ...t.function, name: `zc_${nm}` } };
+    }
+    return t;
+  });
+  return changed ? { ...payload, tools } : payload;
+}
+
 async function callGateway(base, route, payload, opts, externalSignal) {
   const token = GW_CACHE.token || readOpenclawGatewayToken();
   const ctl = new AbortController();
@@ -405,7 +424,7 @@ async function callGateway(base, route, payload, opts, externalSignal) {
         Authorization: `Bearer ${token}`,
         "x-openclaw-model": `zai/${route}`,
       },
-      body: JSON.stringify({ ...payload, model: "openclaw" }),
+      body: JSON.stringify({ ...renameConflictingTools(payload), model: "openclaw" }),
       signal: ctl.signal,
     });
   } finally {
