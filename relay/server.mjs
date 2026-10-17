@@ -105,8 +105,11 @@ const UPSTREAM_TIMEOUT_MS = 600_000;
 const DISCOVERY_TIMEOUT_MS = 4_000;
 const MAX_BODY = 64 * 1024 * 1024;
 // 上游 GLM 通道的 max_tokens 实测天花板（131072 全过 / 163840 起必 500）
+// ⚠️ 2026-10-17：天花板 131072 只保证不报错，但输出预算给到 126k 时模型会长时间生成
+// （实测 ZCode 2799 条消息 + thinking + max_tokens=126272 跑 3.6 分钟未结束，客户端先放弃
+// → "半天没输出"）。默认钳到 32768，长文档场景可用 env 提高。
 const MAX_OUTPUT_TOKENS = process.env.AUTOCLAW_MAX_OUTPUT_TOKENS === undefined
-  ? 131072
+  ? 32768
   : Number(process.env.AUTOCLAW_MAX_OUTPUT_TOKENS) || 0;
 // 上游 5xx 容错：先同路由重试一次；默认不跨模型降级，避免用户选 DeepSeek/GLM
 // 却静默拿到 Auto。确需降级时只能显式设置 AUTOCLAW_FALLBACK_ROUTE。
