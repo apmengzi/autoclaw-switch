@@ -231,7 +231,34 @@ function scrub(s) {
   if (!s) return "";
   let out = String(s);
   if (lastToken) out = out.split(lastToken).join("***");
-  return out.replace(/(Bearer\s+)[A-Za-z0-9._\-]{8,}/g, "$1***");
+  out = out.replace(/(Bearer\s+)[A-Za-z0-9._\-]{8,}/g, "$1***");
+  // gateway 把上游错误整段 URL 编码塞进 <autoclaw-403-response>...</autoclaw-403-response>，
+  // 直接透给用户是一屏乱码。这里解出 rawBody 的 code/message，变成一句话。
+  // 注意 readDetail 会截断到 500 字符，闭合标签可能已丢失 —— 所以匹配到开标签就尝试解析，
+  // 解不出再退回通用文案（不能因为缺闭合标签就把整段乱码透出去）。
+  const open = out.match(/<autoclaw-\d+-response>/);
+  if (open) {
+    const start = open.index + open[0].length;
+    const rest = out.slice(start);
+    const endIdx = rest.search(/<\/autoclaw-\d+-response>/);
+    const encoded = (endIdx === -1 ? rest : rest.slice(0, endIdx)).replace(/["\\s].*$/, "");
+    let brief = "";
+    try {
+      const outer = JSON.parse(decodeURIComponent(encoded));
+      const raw = outer && outer.rawBody ? JSON.parse(outer.rawBody) : null;
+      if (raw && (raw.code || raw.message)) brief = `${raw.code || ""} ${raw.message || ""}`.trim();
+      else if (outer && outer.status) brief = `HTTP ${outer.status} ${outer.statusText || ""}`.trim();
+    } catch {
+      try {
+        const dec = decodeURIComponent(encoded);
+        const c = dec.match(/"code"\s*:\s*(\d+)/);
+        const m = dec.match(/"message"\s*:\s*"([^"]{0,160})"/);
+        if (c || m) brief = `${c ? c[1] : ""} ${m ? m[1] : ""}`.trim();
+      } catch { /* ignore */ }
+    }
+    out = out.slice(0, open.index) + (brief ? `上游拒绝：${brief}` : "上游拒绝（403）");
+  }
+  return out;
 }
 function log(...a) {
   const line = `[${new Date().toISOString()}] ` + a.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
@@ -409,6 +436,67 @@ function renameConflictingTools(payload) {
     return t;
   });
   return changed ? { ...payload, tools } : payload;
+}
+
+// gateway 把上游错误包成 HTTP 200 + SSE {"error":...} 事件（实测 810000 免费额度耗尽、
+// 403 autoclaw-403-response 都是这种形态）。不窥探就会当成「成功但空回复」：
+// 客户端只收到 role 空块 + end_turn，表现为模型沉默，且永远不会触发换号/降级。
+const GW_PEEK_MAX_BYTES = 262144;
+function rewrapStream(chunks, reader) {
+  return new ReadableStream({
+    start(controller) {
+      for (const c of chunks) controller.enqueue(c);
+      (async () => {
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) { controller.close(); return; }
+            controller.enqueue(value);
+          }
+        } catch (e) { try { controller.error(e); } catch { /* ignore */ } }
+      })();
+    },
+    cancel(reason) { return reader.cancel(reason); },
+  });
+}
+async function peekGatewayStream(resp) {
+  if (!resp.ok || !resp.body) return { resp };
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  const chunks = [];
+  let buf = "", bytes = 0;
+  const pass = () => ({ resp: new Response(rewrapStream(chunks, reader), { status: resp.status, headers: resp.headers }) });
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return pass();
+      chunks.push(value);
+      bytes += value.length;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n\n")) !== -1) {
+        const ev = buf.slice(0, nl);
+        buf = buf.slice(nl + 2);
+        for (const line of ev.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const p = line.slice(5).trim();
+          if (!p || p === "[DONE]") continue;
+          let j; try { j = JSON.parse(p); } catch { continue; }
+          if (j.error) {
+            const msg = typeof j.error === "string" ? j.error : (j.error.message || JSON.stringify(j.error));
+            try { await reader.cancel(); } catch { /* ignore */ }
+            return { error: msg };
+          }
+          const d = ((j.choices || [])[0] || {}).delta || {};
+          if (d.content || d.reasoning_content || d.reasoning || (d.tool_calls && d.tool_calls.length)) return pass();
+        }
+      }
+      if (bytes > GW_PEEK_MAX_BYTES) return pass();
+    }
+  } catch (e) {
+    try { await reader.cancel(); } catch { /* ignore */ }
+    return { error: `stream peek failed: ${e.message}` };
+  }
 }
 
 async function callGateway(base, route, payload, opts, externalSignal) {
@@ -1658,7 +1746,24 @@ async function callUpstream(up, route, payload, opts) {
     r._probeLocal = true;
     return r;
   }
-  if (up.kind === "gateway") return callGateway(up.base, route, payload, opts, opts && opts.externalSignal);
+  if (up.kind === "gateway") {
+    const r = await callGateway(up.base, route, payload, opts, opts && opts.externalSignal);
+    if (!opts || !opts.stream) return r;
+    const peek = await peekGatewayStream(r);
+    if (!peek.error) return peek.resp;
+    // 还原成真正的 HTTP 错误，交给调用方的 810000/403 分支（换号 / 终态报错），
+    // 而不是让它冒充「成功但空回复」。
+    log(`gateway stream error: ${scrub(peek.error)}`);
+    const quota = QUOTA_HARD_RE.test(peek.error);
+    const errResp = new Response(JSON.stringify({ error: { message: peek.error } }), {
+      status: quota ? 400 : 502,
+      headers: { "Content-Type": "application/json" },
+    });
+    // 直接给 readDetail 已清洗的短文案：原始 blob 有上千字符，
+    // readDetail 会先截到 500 再 scrub，届时解码必失败、810000 关键词也丢了。
+    errResp._detail = scrub(peek.error);
+    return errResp;
+  }
   return up.kind === "cloud"
     ? (up.pool ? callCloudPool(route, payload, opts) : callCloud(route, payload, opts, null, opts && opts.externalSignal))
     : callBroker(up.base, route, payload, opts, opts && opts.externalSignal);
@@ -2379,7 +2484,7 @@ async function handleMessages(req, res, body) {
       log(`dumped failed request -> dumps/failed-${ts}.*`);
     } catch (e2) { log("dump write failed: " + scrub(e2.message)); }
     return anthropicError(res, lastStatus === 401 ? 401 : 502,
-      `${up.kind === "cloud" ? "AutoClaw 云端上游" : "AutoClaw Broker"} 返回 ${lastStatus || "连接失败"}（已重试 ${plan.length} 次）: ${lastDetail || "无响应体"}`);
+      `${up.kind === "cloud" ? "AutoClaw 云端上游" : up.kind === "gateway" ? "AutoClaw 网关" : "AutoClaw Broker"} 返回 ${lastStatus || "连接失败"}（已重试 ${plan.length} 次）: ${lastDetail || "无响应体"}`);
   }
   if (usedRoute !== route) log(`degraded: ${route} -> ${usedRoute} | ${digest}`);
 
@@ -2895,7 +3000,7 @@ async function handleChatCompletions(req, res, body) {
 
   if (!upstream) {
     return openaiError(res, lastStatus === 401 ? 401 : 502,
-      `${up.kind === "cloud" ? "AutoClaw 云端上游" : "AutoClaw Broker"} 返回 ${lastStatus || "连接失败"}（已重试 ${plan.length} 次）: ${lastDetail || "无响应体"}`);
+      `${up.kind === "cloud" ? "AutoClaw 云端上游" : up.kind === "gateway" ? "AutoClaw 网关" : "AutoClaw Broker"} 返回 ${lastStatus || "连接失败"}（已重试 ${plan.length} 次）: ${lastDetail || "无响应体"}`);
   }
   if (usedRoute !== route) log(`degraded: ${route} -> ${usedRoute} model=${requested}`);
 
