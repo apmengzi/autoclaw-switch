@@ -420,6 +420,16 @@ async function callGateway(base, route, payload, opts, externalSignal) {
     else externalSignal.addEventListener("abort", () => ctl.abort(), { once: true });
   }
   try {
+    // gateway 收到大 max_completion_tokens（如 ZCode 的 117049）会放开生成 →
+    // 实测 2829 条消息的会话跑 73s+ 仍未结束、客户端先放弃（"半天没输出"）。
+    // 这里把输出预算再钳一次（AUTOCLAW_GATEWAY_MAX_OUTPUT_TOKENS 可调）。
+    const gwBody = { ...renameConflictingTools(payload), model: "openclaw" };
+    const gwMt = Number(gwBody.max_completion_tokens ?? gwBody.max_tokens);
+    const GW_OUT_CAP = Number(process.env.AUTOCLAW_GATEWAY_MAX_OUTPUT_TOKENS || 16384);
+    if (Number.isFinite(gwMt) && gwMt > GW_OUT_CAP) {
+      gwBody.max_completion_tokens = GW_OUT_CAP;
+      delete gwBody.max_tokens;
+    }
     return await fetch(`${base}/v1/chat/completions`, {
       method: "POST",
       headers: {
@@ -427,7 +437,7 @@ async function callGateway(base, route, payload, opts, externalSignal) {
         Authorization: `Bearer ${token}`,
         "x-openclaw-model": `zai/${route}`,
       },
-      body: JSON.stringify({ ...renameConflictingTools(payload), model: "openclaw" }),
+      body: JSON.stringify(gwBody),
       signal: ctl.signal,
     });
   } finally {
