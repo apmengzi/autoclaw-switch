@@ -9,8 +9,18 @@ contextBridge.exposeInMainWorld("api", {
   watcherStart: () => ipcRenderer.invoke("watcher:start"),
   watcherStop: () => ipcRenderer.invoke("watcher:stop"),
   refreshPoints: () => ipcRenderer.invoke("points:refresh"),
+  // 余额总览：七条链路的「还能用多少」一次拉齐（有额度接口的给数字，没有的如实标注）
+  balanceAll: () => ipcRenderer.invoke("balance:all"),
   registerZcode: () => ipcRenderer.invoke("zcode:register"),
   zcodeCheck: () => ipcRenderer.invoke("zcode:check"),
+  // Codex CLI 接入：config.toml 的托管区读写（app/codex-config.js）+ 前门翻译层（bridge/codex_front.mjs）
+  codexStatus: () => ipcRenderer.invoke("codex:status"),
+  codexRegister: (linkId, opts) => ipcRenderer.invoke("codex:register", linkId, opts),
+  codexDeregister: (linkId) => ipcRenderer.invoke("codex:deregister", linkId),
+  codexCatalog: (linkId) => ipcRenderer.invoke("codex:catalog", linkId),
+  codexSmoke: (linkId) => ipcRenderer.invoke("codex:smoke", linkId),
+  codexFrontStart: () => ipcRenderer.invoke("codex:front-start"),
+  codexFrontStop: () => ipcRenderer.invoke("codex:front-stop"),
   syncCredential: () => ipcRenderer.invoke("credential:sync"),
   smokeTest: () => ipcRenderer.invoke("smoke:test"),
   workbuddyStart: () => ipcRenderer.invoke("workbuddy:start"),
@@ -32,5 +42,11 @@ contextBridge.exposeInMainWorld("api", {
   qoderSmoke: () => ipcRenderer.invoke("qoder:smoke"),
   qoderSyncAccounts: () => ipcRenderer.invoke("qoder:sync-accounts"),
   qwenworkSmoke: () => ipcRenderer.invoke("qwenwork:smoke"),
+  keysQuery: () => ipcRenderer.invoke("keys:query"),
+  keysProbe: () => ipcRenderer.invoke("keys:probe"),
+  keysGenerate: (linkId) => ipcRenderer.invoke("keys:generate", linkId),
+  // 标准钥（别名·sk- 形）：action = add（key 为空则现场生成一把 sk-<前缀>-<hex>）/ remove（撤销 key）
+  keysAlias: (linkId, key, action) => ipcRenderer.invoke("keys:alias", linkId, key, action),
+  keysRotate: (linkId, newKey) => ipcRenderer.invoke("keys:rotate", linkId, newKey),
   tailLog: (which) => ipcRenderer.invoke("logs:tail", which),
 });

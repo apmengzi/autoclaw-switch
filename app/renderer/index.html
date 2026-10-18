@@ -8,7 +8,7 @@
 </head>
 <body>
   <header>
-    <div class="brand">🦞 All-in-One 反代平台 <span class="sub">AutoClaw · WorkBuddy · Trae → ZCode</span></div>
+    <div class="brand">🦞 All-in-One 反代平台 <span class="sub">七条链路 · ZCode / Codex 双平台</span></div>
     <div class="head-actions">
       <button id="btn-startall" class="btn ok">一键启动全部</button>
       <button id="btn-envcheck" class="btn">环境体检</button>
@@ -18,206 +18,425 @@
   <div id="boot-note" class="note boot"></div>
   <div id="env-note" class="note boot env"></div>
 
-  <main>
-    <section class="grid">
-      <!-- AutoClaw -->
-      <div class="card" id="card-relay">
-        <div class="card-head"><h2>AutoClaw 平台</h2><span id="relay-pill" class="pill unknown">-</span></div>
-        <div class="kv">
-          <div><label>反代状态</label><span id="relay-status">-</span></div>
-          <div><label>上游通道</label><span id="relay-upstream">-</span></div>
-          <div><label>监听</label><span class="mono">127.0.0.1:18766 · anthropic</span></div>
-          <div><label>运行时长</label><span id="relay-uptime">-</span></div>
-          <div><label>账号</label><span id="acc-name">-</span></div>
-          <div><label>积分余额</label><span id="acc-points">-</span></div>
-          <div><label>Token 到期</label><span id="token-exp">-</span></div>
-          <div><label>凭证同步器</label><span id="watcher-status">-</span></div>
-          <div><label>凭证摘要</label><span class="mono" id="credential">-</span></div>
+  <div class="shell">
+    <!-- 按平台分类的左侧导航：一个平台一页，页面里只放这个平台自己的状态 / 模型 / 动作 -->
+    <aside class="sidebar">
+      <div class="navgroup">
+        <div class="navtitle">平台</div>
+        <button type="button" class="navitem active" data-view="overview"><span class="dot unknown" id="nav-dot-overview"></span>总览</button>
+        <button type="button" class="navitem" data-view="autoclaw"><span class="dot unknown" id="nav-dot-relay"></span>AutoClaw</button>
+        <button type="button" class="navitem" data-view="workbuddy"><span class="dot unknown" id="nav-dot-wb"></span>WorkBuddy</button>
+        <button type="button" class="navitem" data-view="trae"><span class="dot unknown" id="nav-dot-trae"></span>Trae</button>
+        <button type="button" class="navitem" data-view="doubao"><span class="dot unknown" id="nav-dot-doubao"></span>豆包工作</button>
+        <button type="button" class="navitem" data-view="comate"><span class="dot unknown" id="nav-dot-comate"></span>Comate</button>
+        <button type="button" class="navitem" data-view="qoder"><span class="dot unknown" id="nav-dot-qoder"></span>Qoder CN</button>
+        <button type="button" class="navitem" data-view="qwenwork"><span class="dot unknown" id="nav-dot-qwenwork"></span>千问办公</button>
+      </div>
+      <div class="navgroup">
+        <div class="navtitle">接入</div>
+        <button type="button" class="navitem" data-view="zcode"><span class="dot unknown" id="nav-dot-zcode"></span>ZCode 注册</button>
+        <button type="button" class="navitem" data-view="codex"><span class="dot unknown" id="nav-dot-codex"></span>Codex CLI</button>
+        <button type="button" class="navitem" data-view="keys"><span class="dot unknown" id="nav-dot-keys"></span>入站 api_key</button>
+      </div>
+      <div class="navgroup">
+        <div class="navtitle">诊断</div>
+        <button type="button" class="navitem" data-view="logs">日志</button>
+      </div>
+      <div class="sidebar-foot">
+        端口<br />
+        18766 · 7863 · 18768<br />
+        18770 · 18774 · 8791<br />
+        前门 18776
+      </div>
+    </aside>
+
+    <main id="views">
+      <!-- ===================== 总览 ===================== -->
+      <section class="view active" id="view-overview">
+        <div class="view-head">
+          <div>
+            <h1>总览</h1>
+            <p class="view-sub">七条链路一屏 · 点任意平台进入详情</p>
+          </div>
+          <div id="balance-pill" class="pill unknown">-</div>
         </div>
-        <div class="sec">模型别名（anthropic → 2.x 目录）</div>
-        <div class="models" id="relay-models"></div>
-        <div class="btns">
-          <button id="btn-relay-start" class="btn ok">启动</button>
-          <button id="btn-relay-stop" class="btn danger">停止</button>
-          <button id="btn-smoke" class="btn">连通性测试</button>
-          <button id="btn-points" class="btn">刷新余额</button>
+
+        <div class="ovgrid">
+          <button type="button" class="ovtile" data-view="autoclaw">
+            <span class="ovtop"><span class="dot unknown" id="ov-dot-relay"></span><b>AutoClaw</b><span id="ov-state-relay" class="ovstate unknown">-</span></span>
+            <span class="ovmeta">:18766 · anthropic</span>
+          </button>
+          <button type="button" class="ovtile" data-view="workbuddy">
+            <span class="ovtop"><span class="dot unknown" id="ov-dot-wb"></span><b>WorkBuddy</b><span id="ov-state-wb" class="ovstate unknown">-</span></span>
+            <span class="ovmeta">:7863 · openai</span>
+          </button>
+          <button type="button" class="ovtile" data-view="trae">
+            <span class="ovtop"><span class="dot unknown" id="ov-dot-trae"></span><b>Trae</b><span id="ov-state-trae" class="ovstate unknown">-</span></span>
+            <span class="ovmeta">:18768 · openai + anthropic</span>
+          </button>
+          <button type="button" class="ovtile" data-view="doubao">
+            <span class="ovtop"><span class="dot unknown" id="ov-dot-doubao"></span><b>豆包工作</b><span id="ov-state-doubao" class="ovstate unknown">-</span></span>
+            <span class="ovmeta">:18770 · openai + anthropic</span>
+          </button>
+          <button type="button" class="ovtile" data-view="comate">
+            <span class="ovtop"><span class="dot unknown" id="ov-dot-comate"></span><b>Comate</b><span id="ov-state-comate" class="ovstate unknown">-</span></span>
+            <span class="ovmeta">:18774 · openai + anthropic</span>
+          </button>
+          <button type="button" class="ovtile" data-view="qoder">
+            <span class="ovtop"><span class="dot unknown" id="ov-dot-qoder"></span><b>Qoder CN</b><span id="ov-state-qoder" class="ovstate unknown">-</span></span>
+            <span class="ovmeta">:8791 · openai · COSY</span>
+          </button>
+          <button type="button" class="ovtile" data-view="qwenwork">
+            <span class="ovtop"><span class="dot unknown" id="ov-dot-qwenwork"></span><b>千问办公</b><span id="ov-state-qwenwork" class="ovstate unknown">-</span></span>
+            <span class="ovmeta">:8791 · qworkcn 出口</span>
+          </button>
+        </div>
+
+        <!-- 余额 / 额度总览：有额度接口的给真实数字，上游确实没有接口的如实标注，不编数字 -->
+        <div class="card">
+          <div class="card-head">
+            <h2>余额 / 额度总览</h2>
+            <span class="hint">有接口给读数，没接口如实标注</span>
+          </div>
+          <div id="balance-list" class="ballist">点「刷新余额」加载</div>
+          <div class="btns">
+            <button id="btn-balance-refresh" class="btn ok btn-bal-refresh">刷新余额</button>
+          </div>
+          <div id="balance-note" class="note">每次查询现拉各链路上游接口（无定时轮询）；Qoder/千问办公实时刷新失败时显示上次成功缓存</div>
+        </div>
+      </section>
+
+      <!-- ===================== AutoClaw ===================== -->
+      <section class="view" id="view-autoclaw">
+        <div class="view-head">
+          <div>
+            <h1>AutoClaw</h1>
+            <p class="view-sub">127.0.0.1:18766 · anthropic · 桌面端积分池</p>
+          </div>
+          <div class="view-actions">
+            <span id="relay-pill" class="pill unknown">-</span>
+            <button id="btn-relay-start" class="btn ok">启动</button>
+            <button id="btn-relay-stop" class="btn danger">停止</button>
+            <button id="btn-smoke" class="btn">连通性测试</button>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><label>反代状态</label><span id="relay-status">-</span></div>
+          <div class="stat"><label>上游通道</label><span id="relay-upstream">-</span></div>
+          <div class="stat"><label>运行时长</label><span id="relay-uptime">-</span></div>
+          <div class="stat"><label>账号</label><span id="acc-name">-</span></div>
+          <div class="stat"><label>积分余额</label><span id="acc-points">-</span></div>
+          <div class="stat"><label>Token 到期</label><span id="token-exp">-</span></div>
+          <div class="stat"><label>凭证同步器</label><span id="watcher-status">-</span></div>
+          <div class="stat wide"><label>凭证摘要</label><span class="mono" id="credential">-</span></div>
+        </div>
+        <div class="toolbar">
+          <button id="btn-points" class="btn">刷新积分</button>
           <button id="btn-sync" class="btn">同步凭证</button>
           <button id="btn-watcher" class="btn">启停同步器</button>
+          <button class="btn" data-logview="relay">relay 日志</button>
         </div>
+        <div class="section-title">模型别名 <span class="hint">anthropic → 2.x 目录</span></div>
+        <div class="models" id="relay-models"></div>
         <div id="smoke-result" class="note"></div>
         <div id="points-note" class="note"></div>
-      </div>
+      </section>
 
-      <!-- WorkBuddy -->
-      <div class="card">
-        <div class="card-head"><h2>WorkBuddy 网关</h2><span id="wb-pill" class="pill unknown">-</span></div>
-        <div class="kv">
-          <div><label>网关状态</label><span id="wb-status">-</span></div>
-          <div><label>积分</label><span id="wb-credits">-</span></div>
-          <div><label>监听</label><span class="mono">127.0.0.1:7863 · openai</span></div>
-          <div><label>账号</label><span id="wb-account">-</span></div>
+      <!-- ===================== WorkBuddy ===================== -->
+      <section class="view" id="view-workbuddy">
+        <div class="view-head">
+          <div>
+            <h1>WorkBuddy</h1>
+            <p class="view-sub">127.0.0.1:7863 · openai · wb2api</p>
+          </div>
+          <div class="view-actions">
+            <span id="wb-pill" class="pill unknown">-</span>
+            <button id="btn-wb-start" class="btn ok">启动</button>
+            <button id="btn-wb-stop" class="btn danger">停止</button>
+            <button id="btn-wb-smoke" class="btn">连通性测试</button>
+          </div>
         </div>
-        <div class="sec">模型目录</div>
+        <div class="stats">
+          <div class="stat"><label>网关状态</label><span id="wb-status">-</span></div>
+          <div class="stat"><label>积分</label><span id="wb-credits">-</span></div>
+          <div class="stat"><label>账号</label><span id="wb-account">-</span></div>
+        </div>
+        <div class="toolbar">
+          <button class="btn" data-logview="workbuddy">WorkBuddy 日志</button>
+        </div>
+        <div class="section-title">模型目录</div>
         <div class="models" id="wb-models"></div>
-        <div class="btns">
-          <button id="btn-wb-start" class="btn ok">启动</button>
-          <button id="btn-wb-stop" class="btn danger">停止</button>
-          <button id="btn-wb-smoke" class="btn">连通性测试</button>
-        </div>
         <div id="wb-smoke-result" class="note"></div>
-      </div>
+      </section>
 
-      
-
-      <!-- Trae -->
-      <div class="card">
-        <div class="card-head"><h2>Trae 平台</h2><span id="trae-pill" class="pill unknown">-</span></div>
-        <div class="kv">
-          <div><label>网关状态</label><span id="trae-status">-</span></div>
-          <div><label>账号</label><span id="trae-account">-</span></div>
-          <div><label>凭证到期</label><span id="trae-exp">-</span></div>
-          <div><label>模式</label><span id="trae-sessions">-</span></div>
-          <div><label>监听</label><span class="mono">127.0.0.1:18768 · openai + anthropic</span></div>
+      <!-- ===================== Trae ===================== -->
+      <section class="view" id="view-trae">
+        <div class="view-head">
+          <div>
+            <h1>Trae SOLO CN</h1>
+            <p class="view-sub">127.0.0.1:18768 · openai + anthropic · 无工具通道</p>
+          </div>
+          <div class="view-actions">
+            <span id="trae-pill" class="pill unknown">-</span>
+            <button id="btn-trae-start" class="btn ok">启动</button>
+            <button id="btn-trae-stop" class="btn danger">停止</button>
+            <button id="btn-trae-smoke" class="btn">连通性测试</button>
+          </div>
         </div>
-        <div class="sec">模型目录（<span id="trae-model-count">-</span> 个，随账号动态拉取）</div>
+        <div class="stats">
+          <div class="stat"><label>网关状态</label><span id="trae-status">-</span></div>
+          <div class="stat"><label>账号</label><span id="trae-account">-</span></div>
+          <div class="stat"><label>凭证到期</label><span id="trae-exp">-</span></div>
+          <div class="stat wide"><label>模式</label><span id="trae-sessions">-</span></div>
+        </div>
+        <div class="toolbar">
+          <button class="btn" data-logview="trae">Trae 日志</button>
+        </div>
+        <div class="section-title">模型目录（<span id="trae-model-count">-</span> 个，随账号动态拉取）</div>
         <div class="models" id="trae-models"></div>
-        <div class="btns">
-          <button id="btn-trae-start" class="btn ok">启动</button>
-          <button id="btn-trae-stop" class="btn danger">停止</button>
-          <button id="btn-trae-smoke" class="btn">连通性测试</button>
-        </div>
         <div id="trae-smoke-result" class="note"></div>
-      </div>
+      </section>
 
-      <!-- 豆包工作 -->
-      <div class="card">
-        <div class="card-head"><h2>豆包工作</h2><span id="doubao-pill" class="pill unknown">-</span></div>
-        <div class="kv">
-          <div><label>网关状态</label><span id="doubao-status">-</span></div>
-          <div><label>登录态</label><span id="doubao-cookies">-</span></div>
-          <div><label>对话</label><span id="doubao-conv">-</span></div>
-          <div><label>模式</label><span id="doubao-sessions">-</span></div>
-          <div><label>监听</label><span class="mono">127.0.0.1:18770 · openai + anthropic</span></div>
+      <!-- ===================== 豆包工作 ===================== -->
+      <section class="view" id="view-doubao">
+        <div class="view-head">
+          <div>
+            <h1>豆包工作</h1>
+            <p class="view-sub">127.0.0.1:18770 · openai + anthropic · 网页接口</p>
+          </div>
+          <div class="view-actions">
+            <span id="doubao-pill" class="pill unknown">-</span>
+            <button id="btn-doubao-start" class="btn ok">启动</button>
+            <button id="btn-doubao-stop" class="btn danger">停止</button>
+            <button id="btn-doubao-smoke" class="btn">连通性测试</button>
+          </div>
         </div>
-        <div class="sec">模型目录（<span id="doubao-model-count">-</span> 个，本地合成：标准 / 深度思考）</div>
-        <div class="models" id="doubao-models"></div>
-        <div class="btns">
-          <button id="btn-doubao-start" class="btn ok">启动</button>
-          <button id="btn-doubao-stop" class="btn danger">停止</button>
-          <button id="btn-doubao-smoke" class="btn">连通性测试</button>
+        <div class="stats">
+          <div class="stat"><label>网关状态</label><span id="doubao-status">-</span></div>
+          <div class="stat wide"><label>登录态</label><span id="doubao-cookies">-</span></div>
+          <div class="stat"><label>对话</label><span id="doubao-conv">-</span></div>
+          <div class="stat wide"><label>模式</label><span id="doubao-sessions">-</span></div>
+        </div>
+        <div class="toolbar">
           <button id="btn-doubao-cookies" class="btn">同步登录态</button>
           <button id="btn-doubao-restart" class="btn">重启客户端并同步</button>
+          <button class="btn" data-logview="doubao">豆包日志</button>
         </div>
+        <div class="section-title">模型目录（<span id="doubao-model-count">-</span> 个，本地合成：标准 / 深度思考）</div>
+        <div class="models" id="doubao-models"></div>
         <div id="doubao-smoke-result" class="note"></div>
-      </div>
+      </section>
 
-      <!-- Comate（文心快码） -->
-      <div class="card">
-        <div class="card-head"><h2>Comate 文心快码</h2><span id="comate-pill" class="pill unknown">-</span></div>
-        <div class="kv">
-          <div><label>网关状态</label><span id="comate-status">-</span></div>
-          <div><label>登录态</label><span id="comate-cred">-</span></div>
-          <div><label>模式</label><span id="comate-mode">-</span></div>
-          <div><label>监听</label><span class="mono">127.0.0.1:18774 · openai + anthropic</span></div>
+      <!-- ===================== Comate ===================== -->
+      <section class="view" id="view-comate">
+        <div class="view-head">
+          <div>
+            <h1>Comate 文心快码</h1>
+            <p class="view-sub">127.0.0.1:18774 · openai + anthropic · SSE 真流式</p>
+          </div>
+          <div class="view-actions">
+            <span id="comate-pill" class="pill unknown">-</span>
+            <button id="btn-comate-start" class="btn ok">启动</button>
+            <button id="btn-comate-stop" class="btn danger">停止</button>
+            <button id="btn-comate-smoke" class="btn">连通性测试</button>
+          </div>
         </div>
-        <div class="sec">模型目录（<span id="comate-model-count">-</span> 个，随官方目录动态拉取）</div>
+        <div class="stats">
+          <div class="stat"><label>网关状态</label><span id="comate-status">-</span></div>
+          <div class="stat wide"><label>登录态</label><span id="comate-cred">-</span></div>
+          <div class="stat wide"><label>模式</label><span id="comate-mode">-</span></div>
+        </div>
+        <div class="toolbar">
+          <button class="btn" data-logview="comate">Comate 日志</button>
+        </div>
+        <div class="section-title">模型目录（<span id="comate-model-count">-</span> 个，随官方目录动态拉取）</div>
         <div class="models" id="comate-models"></div>
-        <div class="btns">
-          <button id="btn-comate-start" class="btn ok">启动</button>
-          <button id="btn-comate-stop" class="btn danger">停止</button>
-          <button id="btn-comate-smoke" class="btn">连通性测试</button>
-        </div>
         <div id="comate-smoke-result" class="note"></div>
-      </div>
+      </section>
 
-      <!-- Qoder CN -->
-      <div class="card">
-        <div class="card-head"><h2>Qoder CN</h2><span id="qoder-pill" class="pill unknown">-</span></div>
-        <div class="kv">
-          <div><label>网关状态</label><span id="qoder-status">-</span></div>
-          <div><label>账号池</label><span id="qoder-accounts">-</span></div>
-          <div><label>出口</label><span class="mono">cn（qoder.com.cn）</span></div>
-          <div><label>监听</label><span class="mono">127.0.0.1:8791 · openai · COSY 签名</span></div>
+      <!-- ===================== Qoder CN ===================== -->
+      <section class="view" id="view-qoder">
+        <div class="view-head">
+          <div>
+            <h1>Qoder CN</h1>
+            <p class="view-sub">127.0.0.1:8791 · openai · COSY 签名 · 出口 cn</p>
+          </div>
+          <div class="view-actions">
+            <span id="qoder-pill" class="pill unknown">-</span>
+            <button id="btn-qoder-start" class="btn ok">启动</button>
+            <button id="btn-qoder-stop" class="btn danger">停止</button>
+            <button id="btn-qoder-smoke" class="btn">连通性测试</button>
+          </div>
         </div>
-        <div class="sec">模型目录（<span id="qoder-model-count">-</span> 个，仅显示账号可用项）</div>
-        <div class="models" id="qoder-models"></div>
-        <div class="btns">
-          <button id="btn-qoder-start" class="btn ok">启动</button>
-          <button id="btn-qoder-stop" class="btn danger">停止</button>
-          <button id="btn-qoder-smoke" class="btn">连通性测试</button>
+        <div class="stats">
+          <div class="stat"><label>网关状态</label><span id="qoder-status">-</span></div>
+          <div class="stat"><label>账号池</label><span id="qoder-accounts">-</span></div>
+        </div>
+        <div class="quotabar">
+          <span class="qlabel">额度</span>
+          <span class="qval unknown" id="bal-qoder">未查询</span>
+          <span class="qdetail" id="bal-detail-qoder"></span>
+          <button class="btn small btn-bal-refresh">刷新</button>
+        </div>
+        <div class="toolbar">
           <button id="btn-qoder-sync" class="btn">同步账号</button>
+          <button class="btn" data-logview="qoder">Qoder 日志</button>
         </div>
+        <div class="section-title">模型目录（<span id="qoder-model-count">-</span> 个，仅显示账号可用项）</div>
+        <div class="models" id="qoder-models"></div>
         <div id="qoder-smoke-result" class="note"></div>
-      </div>
+      </section>
 
-      <!-- 千问办公（与 Qoder CN 共用同一个网关进程，出口不同） -->
-      <div class="card">
-        <div class="card-head"><h2>千问办公</h2><span id="qwenwork-pill" class="pill unknown">-</span></div>
-        <div class="kv">
-          <div><label>网关状态</label><span id="qwenwork-status">-</span></div>
-          <div><label>账号池</label><span id="qwenwork-accounts">-</span></div>
-          <div><label>出口</label><span class="mono">qworkcn（qwenwork.cn）</span></div>
-          <div><label>监听</label><span class="mono">127.0.0.1:8791 · 与 Qoder CN 共用进程</span></div>
+      <!-- ===================== 千问办公 ===================== -->
+      <section class="view" id="view-qwenwork">
+        <div class="view-head">
+          <div>
+            <h1>千问办公</h1>
+            <p class="view-sub">127.0.0.1:8791 · 与 Qoder CN 共用网关进程 · 出口 qworkcn</p>
+          </div>
+          <div class="view-actions">
+            <span id="qwenwork-pill" class="pill unknown">-</span>
+            <button id="btn-qwenwork-start" class="btn ok">启动</button>
+            <button id="btn-qwenwork-stop" class="btn danger">停止</button>
+            <button id="btn-qwenwork-smoke" class="btn">连通性测试</button>
+          </div>
         </div>
-        <div class="sec">模型目录（<span id="qwenwork-model-count">-</span> 个，qwork 场景）</div>
-        <div class="models" id="qwenwork-models"></div>
-        <div class="btns">
-          <button id="btn-qwenwork-start" class="btn ok">启动</button>
-          <button id="btn-qwenwork-stop" class="btn danger">停止</button>
-          <button id="btn-qwenwork-smoke" class="btn">连通性测试</button>
+        <div class="stats">
+          <div class="stat"><label>网关状态</label><span id="qwenwork-status">-</span></div>
+          <div class="stat"><label>账号池</label><span id="qwenwork-accounts">-</span></div>
+        </div>
+        <div class="quotabar">
+          <span class="qlabel">额度</span>
+          <span class="qval unknown" id="bal-qwenwork">未查询</span>
+          <span class="qdetail" id="bal-detail-qwenwork"></span>
+          <button class="btn small btn-bal-refresh">刷新</button>
+        </div>
+        <div class="toolbar">
           <button id="btn-qwenwork-sync" class="btn">同步账号</button>
+          <button class="btn" data-logview="qoder">千问办公日志</button>
         </div>
+        <div class="section-title">模型目录（<span id="qwenwork-model-count">-</span> 个，qwork 场景）</div>
+        <div class="models" id="qwenwork-models"></div>
         <div id="qwenwork-smoke-result" class="note"></div>
-      </div>
+      </section>
 
-    </section>
-
-    <section class="grid">
-      <!-- ZCode -->
-      <div class="card">
-        <div class="card-head"><h2>ZCode 供应商注册</h2><span id="zcode-pill" class="pill unknown">-</span></div>
-        <div class="kv">
-          <div><label>注册状态</label><span id="zcode-registered">-</span></div>
-          <div><label>AutoClaw（anthropic）</label><span class="mono">:18766 · <span id="zcode-ac-count">-</span> 模型</span></div>
-          <div><label>WorkBuddy（openai）</label><span class="mono">:7863 · <span id="zcode-wb-count">-</span> 模型</span></div>
-          <div><label>Trae（openai）</label><span class="mono">:18768 · <span id="zcode-trae-count">-</span> 模型</span></div>
-          <div><label>豆包工作（openai）</label><span class="mono">:18770 · <span id="zcode-doubao-count">-</span> 模型</span></div>
-          <div><label>Comate（openai）</label><span class="mono">:18774 · <span id="zcode-comate-count">-</span> 模型</span></div>
-          <div><label>Qoder CN（openai）</label><span class="mono">:8791 · <span id="zcode-qoder-count">-</span> 模型</span></div>
-          <div><label>千问办公（openai）</label><span class="mono">:8791 · <span id="zcode-qwenwork-count">-</span> 模型</span></div>
-          <div><label>生效方式</label><span>注册后重启 ZCode</span></div>
+      <!-- ===================== ZCode 注册 ===================== -->
+      <section class="view" id="view-zcode">
+        <div class="view-head">
+          <div>
+            <h1>ZCode 供应商注册</h1>
+            <p class="view-sub">七条链路写进 ZCode 供应商表 · 注册后重启 ZCode 生效</p>
+          </div>
+          <div class="view-actions"><span id="zcode-pill" class="pill unknown">-</span></div>
         </div>
-        <div class="sec">ZCode 侧模型清单</div>
+        <div class="stats">
+          <div class="stat wide"><label>注册状态</label><span id="zcode-registered">-</span></div>
+          <div class="stat"><label>AutoClaw（anthropic）</label><span>:18766 · <span id="zcode-ac-count">-</span> 模型</span></div>
+          <div class="stat"><label>WorkBuddy（openai）</label><span>:7863 · <span id="zcode-wb-count">-</span> 模型</span></div>
+          <div class="stat"><label>Trae（openai）</label><span>:18768 · <span id="zcode-trae-count">-</span> 模型</span></div>
+          <div class="stat"><label>豆包工作（openai）</label><span>:18770 · <span id="zcode-doubao-count">-</span> 模型</span></div>
+          <div class="stat"><label>Comate（openai）</label><span>:18774 · <span id="zcode-comate-count">-</span> 模型</span></div>
+          <div class="stat"><label>Qoder CN（openai）</label><span>:8791 · <span id="zcode-qoder-count">-</span> 模型</span></div>
+          <div class="stat"><label>千问办公（openai）</label><span>:8791 · <span id="zcode-qwenwork-count">-</span> 模型</span></div>
+        </div>
+        <div class="section-title">ZCode 侧模型清单</div>
         <div class="models" id="zcode-models"></div>
-        <div class="btns">
+        <div class="toolbar">
           <button id="btn-register" class="btn ok">一键注册 / 同步模型目录</button>
           <button id="btn-zcheck" class="btn">配置体检</button>
         </div>
         <div id="register-note" class="note"></div>
         <div id="zcheck-note" class="note"></div>
-      </div>
-    </section>
+      </section>
 
-    </section>
-
-    <section class="card logcard">
-      <div class="card-head">
-        <h2>日志</h2>
-        <div class="tabs">
-          <button class="tab active" data-log="relay">relay</button>
-          <button class="tab" data-log="watch">同步器</button>
-          <button class="tab" data-log="workbuddy">WorkBuddy</button>
-          <button class="tab" data-log="trae">Trae</button>
-          <button class="tab" data-log="doubao">豆包工作</button>
-          <button class="tab" data-log="comate">Comate</button>
-          <button class="tab" data-log="qoder">Qoder</button>
-          <button class="tab" data-log="console">控制台</button>
-          <label class="auto"><input type="checkbox" id="autorefresh" checked /> 自动刷新</label>
+      <!-- ===================== Codex CLI ===================== -->
+      <section class="view" id="view-codex">
+        <div class="view-head">
+          <div>
+            <h1>Codex CLI 接入</h1>
+            <p class="view-sub">0.100+ 只认 /v1/responses · 前门 :18776 + config.toml 托管区</p>
+          </div>
+          <div class="view-actions"><span id="codex-pill" class="pill unknown">-</span></div>
         </div>
-      </div>
-      <pre id="logview">加载中…</pre>
-    </section>
-  </main>
+        <div class="stats">
+          <div class="stat"><label>Codex CLI</label><span id="codex-cli">-</span></div>
+          <div class="stat wide"><label>配置文件</label><span class="mono" id="codex-config">-</span></div>
+          <div class="stat wide"><label>当前指向</label><span id="codex-current">-</span></div>
+          <div class="stat"><label>已注册链路</label><span id="codex-registered">-</span></div>
+          <div class="stat"><label>前门（:18776）</label><span id="codex-front">-</span></div>
+          <div class="stat"><label>Codex 自带目录</label><span id="codex-bundled">-</span></div>
+        </div>
+        <div class="section-title">链路一览 <span class="hint">注册 = 写托管表；当前 = Codex 正在用它；聊天档上游没有工具通道</span></div>
+        <div id="codex-links" class="keyslist">点「体检」加载</div>
+        <div class="toolbar">
+          <select id="codex-link" class="btn" title="要操作的链路"></select>
+          <button id="btn-codex-register" class="btn ok">注册 / 设为当前</button>
+          <button id="btn-codex-deregister" class="btn danger">摘除</button>
+          <button id="btn-codex-catalog" class="btn">目录预览</button>
+          <button id="btn-codex-smoke" class="btn">冒烟</button>
+        </div>
+        <div class="toolbar">
+          <span class="toolbar-label">前门</span>
+          <button id="btn-codex-front-start" class="btn">启动</button>
+          <button id="btn-codex-front-stop" class="btn">停止</button>
+          <button id="btn-codex-refresh" class="btn">体检</button>
+          <button class="btn" data-logview="codex">Codex 日志</button>
+        </div>
+        <div id="codex-note" class="note"></div>
+      </section>
+
+      <!-- ===================== 入站 api_key ===================== -->
+      <section class="view" id="view-keys">
+        <div class="view-head">
+          <div>
+            <h1>入站 api_key</h1>
+            <p class="view-sub">七条链路闸门的钥匙盘点 / 生成 / 鉴权体检</p>
+          </div>
+          <div class="view-actions"><span id="keys-pill" class="pill unknown">-</span></div>
+        </div>
+        <div class="explain">
+          <p><b>闸门语义</b>模型路径必须带钥匙（否则 401），/health 豁免；生成 = 加钥，内置兜底钥仍有效。</p>
+          <p><b>生效位置</b>ZCode access.apiKey = 闸门钥匙。</p>
+          <p><b>标准钥（sk-）</b>「sk 钥」= 加一把 sk- 形别名，给只认 sk- 的标准工具（DeepSeek Harness / Codex / OpenAI SDK）用；只进闸门，不改 ZCode 注册值，可 ✕ 撤销。</p>
+        </div>
+        <div class="section-title">钥匙盘点 <span class="hint">悬停看来源，点击复制；「生成」= 随机新钥 + 重启链路 + 排队重注册</span></div>
+        <div id="keys-list" class="keyslist">未加载</div>
+        <div class="toolbar">
+          <button id="btn-keys-probe" class="btn ok">鉴权体检</button>
+          <button id="btn-keys-reload" class="btn">重新盘点</button>
+        </div>
+        <div id="keys-note" class="note"></div>
+      </section>
+
+      <!-- ===================== 日志 ===================== -->
+      <section class="view" id="view-logs">
+        <div class="view-head">
+          <div>
+            <h1>日志</h1>
+            <p class="view-sub">按链路分开 · 3 秒自动刷新</p>
+          </div>
+        </div>
+        <div class="card logcard">
+          <div class="loghead">
+            <h2>运行日志</h2>
+            <div class="tabs">
+              <button class="tab active" data-log="relay">relay</button>
+              <button class="tab" data-log="watch">同步器</button>
+              <button class="tab" data-log="workbuddy">WorkBuddy</button>
+              <button class="tab" data-log="trae">Trae</button>
+              <button class="tab" data-log="doubao">豆包工作</button>
+              <button class="tab" data-log="comate">Comate</button>
+              <button class="tab" data-log="qoder">Qoder</button>
+              <button class="tab" data-log="codex">Codex</button>
+              <button class="tab" data-log="console">控制台</button>
+              <label class="auto"><input type="checkbox" id="autorefresh" checked /> 自动刷新</label>
+            </div>
+          </div>
+          <pre id="logview">加载中…</pre>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <footer>仅供学习研究 · 逆向非官方接口有账号风险 · AutoClaw 是智谱/Z.ai 的产品，本项目与其无关</footer>
 

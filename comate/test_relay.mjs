@@ -141,6 +141,26 @@ check("D3 没有工具结果 → null", () => {
   eq(extractPending([{ role: "user", content: "hi" }]), null);
   eq(extractPending([]), null);
 });
+check("D4 交错回报（Codex 成对渲染）→ 两条结果都要收全", () => {
+  const p = extractPending([
+    { role: "user", content: "写文件并执行" },
+    { role: "assistant", content: null, toolCalls: [{ id: "c1", name: "write_file", arguments: "{}" }] },
+    { role: "tool", content: "", toolResult: { id: "c1", name: "write_file", text: "已写入" } },
+    { role: "assistant", content: null, toolCalls: [{ id: "c2", name: "run_command", arguments: "{}" }] },
+    { role: "tool", content: "", toolResult: { id: "c2", name: "run_command", text: "ok" } },
+  ]);
+  eq(p.results.map((r) => r.id), ["c1", "c2"], "两条结果按原顺序");
+  eq(p.calls.map((c) => c.id), ["c1", "c2"], "两轮调用都带回来");
+});
+check("D5 合并回报（一段 assistant + 多段 tool）→ 同样收全", () => {
+  const p = extractPending([
+    { role: "assistant", content: null, toolCalls: [{ id: "a1", name: "write_file", arguments: "{}" }, { id: "a2", name: "run_command", arguments: "{}" }] },
+    { role: "tool", content: "", toolResult: { id: "a1", name: "write_file", text: "1" } },
+    { role: "tool", content: "", toolResult: { id: "a2", name: "run_command", text: "2" } },
+  ]);
+  eq(p.results.map((r) => r.id), ["a1", "a2"]);
+  eq(p.calls.map((c) => c.id), ["a1", "a2"]);
+});
 
 // ------------------------------------------------------------ E 消息归一化
 check("E1 OpenAI tool 消息 → toolResult 三件套", () => {

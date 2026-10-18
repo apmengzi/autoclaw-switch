@@ -3199,6 +3199,22 @@ def build_qoder_body(payload, account, model_key, realm=None):
     return body
 
 
+def _debug_dump_upstream_body(body_obj):
+    """QODER_DUMP_BODY=<file>：把发往上游的明文请求体逐行追加进文件。
+
+    只用于排障（如对比 Responses 与 chat 两条路径的上游体差异）；未设环境
+    变量时零开销。
+    """
+    path = os.environ.get("QODER_DUMP_BODY")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(body_obj, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Qoder 数据面：上游打开与 SSE 信封解包
 # ---------------------------------------------------------------------------
@@ -3583,6 +3599,7 @@ def open_upstream(payload, session_key=None, target_realm=None):
         # 身份相关的 aliyun_user_type 需要真实账号
         body_obj["aliyun_user_type"] = account.user_type or \
             qoder_sign.DEFAULT_USER_TYPE
+        _debug_dump_upstream_body(body_obj)
         encoded = qoder_encode(
             json.dumps(body_obj, ensure_ascii=False).encode("utf-8"))
         # 官方候选推理主机（国际版 api1/api2/api3）：传输层失败时切换域名，
@@ -4206,12 +4223,41 @@ def _downgrade_custom_tool(tool):
 
 
 def _tools_for_chat(tools):
-    """Downgrade custom tools; leave everything else untouched."""
+    """Downgrade custom tools; keep ONLY what the upstream chat endpoint accepts.
+
+    实测（2026-10-11，两区同口径）：上游 chat 端的 tools[] 只认 type=function。
+    web_search / tool_search / namespace(Codex multi_agent_v1) / 未降级的 custom
+    单独发过去都会 400 "Error in upstream response"，而清一色 function 的清单 200。
+    Codex 每一轮请求都带 web_search + namespace，所以不收敛就等于链路完全不可用。
+    丢掉的类型由 unsupported_tool_types() 记账，进日志，不静默。
+    """
     out = []
     for t in tools or []:
         if not isinstance(t, dict):
             continue
-        out.append(_downgrade_custom_tool(t) if _is_custom_tool(t) else t)
+        if _is_custom_tool(t):
+            if t.get("name"):
+                out.append(_downgrade_custom_tool(t))
+            continue
+        if str(t.get("type") or "").lower() != "function":
+            continue
+        if not (t.get("name") or (t.get("function") or {}).get("name")):
+            continue
+        out.append(t)
+    return out
+
+
+def unsupported_tool_types(tools):
+    """tools[] 里被收敛掉、没有转给上游的类型名（去重保序，供日志）"""
+    out = []
+    for t in tools or []:
+        if not isinstance(t, dict) or _is_custom_tool(t):
+            continue
+        ty = str(t.get("type") or "").lower()
+        if ty == "function":
+            continue
+        if ty and ty not in out:
+            out.append(ty)
     return out
 
 
@@ -4404,11 +4450,21 @@ def responses_to_chat(payload):
     if effort:
         chat["reasoning_effort"] = effort
     if payload.get("tools"):
-        chat["tools"] = _tools_for_chat(payload["tools"])
+        chat_tools = _tools_for_chat(payload["tools"])
+        if chat_tools:
+            chat["tools"] = chat_tools
     if payload.get("tool_choice"):
         chat["tool_choice"] = payload["tool_choice"]
     if payload.get("parallel_tool_calls") is not None:
         chat["parallel_tool_calls"] = payload["parallel_tool_calls"]
+    # 上游只认 Chat Completions 的嵌套工具形状。扁平 Responses 工具
+    # （顶层 name/description/parameters/strict）会 400 "Error in upstream
+    # response"——实测 2026-10-11：同样的 7 个 Codex 工具，扁平出站必炸、
+    # 嵌套出站 200。/v1/chat/completions 入口靠 normalize_tools 现包，
+    # Responses 入口没有那一步，所以在这里补齐，保证本函数返回的就是
+    # 可直接出站的 chat 请求体。
+    normalize_tool_choice(chat)
+    normalize_tools(chat)
     return chat
 
 
@@ -6038,15 +6094,16 @@ class Handler(BaseHTTPRequestHandler):
         """Serve /v1/responses by translating to chat completions upstream."""
         session_key = extract_session_key(self.headers, payload)
         custom_names = custom_tool_names(payload.get("tools"))
+        dropped_types = unsupported_tool_types(payload.get("tools"))
         chat_req = responses_to_chat(payload)
         model = payload.get("model") or "auto"
         want_stream = bool(payload.get("stream"))
         t_start = time.time()
         fp = prompt_fingerprint(chat_req.get("messages"))
-        log("responses: model=%s stream=%s msgs=%d effort=%r custom_tools=%s"
+        log("responses: model=%s stream=%s msgs=%d effort=%r custom_tools=%s dropped_tools=%s"
             % (model, want_stream, len(chat_req.get("messages") or []),
                chat_req.get("reasoning_effort"),
-               sorted(custom_names) or "-"))
+               sorted(custom_names) or "-", ",".join(dropped_types) or "-"))
         holder = {"usage": None, "custom_names": custom_names,
                   "allowed_names": _tool_names_from_payload(chat_req)}
         try:

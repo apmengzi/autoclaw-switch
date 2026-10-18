@@ -1223,11 +1223,69 @@ chat = P.responses_to_chat({"model": "m", "input": "hi",
 tools = chat["tools"]
 check("custom tool became type=function", tools[0]["type"] == "function",
       tools[0].get("type"))
+# 出站必须是 Chat Completions 的嵌套形状：扁平 Responses 工具（顶层
+# name/parameters/strict）上游回 400 "Error in upstream response"
+# （2026-10-11 实测：同一份 7 个 Codex 工具，扁平必炸、嵌套 200）。
+check("tools wrapped as nested function schema",
+      all("function" in t and "name" not in t for t in tools),
+      [sorted(t.keys()) for t in tools])
+fn0, fn1 = tools[0]["function"], tools[1]["function"]
 check("custom tool single 'input' param",
-      list((tools[0]["parameters"]["properties"] or {}).keys()) == ["input"])
-check("freeform hint present", "freeform tool" in tools[0]["description"])
-check("grammar forwarded", "start: /.*/s" in tools[0]["description"])
-check("ordinary function tool untouched", tools[1] == FUNC_TOOL)
+      list((fn0["parameters"]["properties"] or {}).keys()) == ["input"])
+check("freeform hint present", "freeform tool" in fn0["description"])
+check("grammar forwarded", "start: /.*/s" in fn0["description"])
+check("ordinary function tool content preserved",
+      fn1["name"] == FUNC_TOOL["name"]
+      and fn1["description"] == FUNC_TOOL["description"]
+      and fn1["parameters"] == FUNC_TOOL["parameters"])
+STRICT_TOOL = {"type": "function", "name": "t", "description": "d",
+               "parameters": {"type": "object", "properties": {}},
+               "strict": False}
+chat_s = P.responses_to_chat({"model": "m", "input": "hi",
+                              "tools": [STRICT_TOOL]})
+check("strict flag survives the wrap",
+      chat_s["tools"][0]["function"].get("strict") is False)
+# 客户端明说 tool_choice=none：与 chat 入口同一口径，tools 一并摘掉
+chat_none = P.responses_to_chat({"model": "m", "input": "hi",
+                                 "tools": [FUNC_TOOL],
+                                 "tool_choice": "none"})
+check("tool_choice none drops tools", "tools" not in chat_none)
+
+# Codex 工具清单收敛：上游 chat 端的 tools[] 只认 type=function
+# （2026-10-11 实测：web_search / tool_search / namespace / 裸 custom 单独发都 400，
+#  清一色 function 才 200；Codex 每轮都带 web_search+namespace，不收敛=链路不可用）
+CODEX_TOOLS = [
+    {"type": "function", "name": "exec_command", "description": "run",
+     "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}}},
+    {"type": "function", "name": "write_stdin", "description": "stdin",
+     "parameters": {"type": "object", "properties": {}}},
+    {"type": "web_search"},
+    {"type": "tool_search", "parameters": {"type": "object", "properties": {}}},
+    {"type": "namespace", "name": "multi_agent_v1",
+     "tools": [{"type": "function", "name": "spawn_agent",
+                "parameters": {"type": "object", "properties": {}}}]},
+    CUSTOM_TOOL,
+]
+_kept = P._tools_for_chat(CODEX_TOOLS)
+check("上游只收 function：web_search/tool_search/namespace 全被收敛掉",
+      [t.get("name") for t in _kept] == ["exec_command", "write_stdin", "apply_patch"],
+      [t.get("name") for t in _kept])
+check("收敛有账本（不静默）",
+      P.unsupported_tool_types(CODEX_TOOLS) == ["web_search", "tool_search", "namespace"],
+      P.unsupported_tool_types(CODEX_TOOLS))
+check("function 工具在过滤层原样透传（形状统一交给出口打包）",
+      _kept[0] is CODEX_TOOLS[0])
+_chat_cx = P.responses_to_chat({"model": "m", "input": "hi", "tools": CODEX_TOOLS})
+check("responses_to_chat 出口清一色 function",
+      {t["type"] for t in _chat_cx["tools"]} == {"function"},
+      [t["type"] for t in _chat_cx["tools"]])
+check("出口是嵌套 function shape 且未降级工具名全在",
+      [t["function"]["name"] for t in _chat_cx["tools"]]
+      == ["exec_command", "write_stdin", "apply_patch"],
+      [t.get("function", {}).get("name") for t in _chat_cx["tools"]])
+check("全被收敛掉时不发空 tools（空表上游也 400）",
+      "tools" not in P.responses_to_chat({"model": "m", "input": "hi",
+                                          "tools": [{"type": "web_search"}]}))
 
 hist = {"model": "m", "input": [
     {"role": "user", "content": "edit the file"},

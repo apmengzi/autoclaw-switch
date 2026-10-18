@@ -94,11 +94,11 @@ if (LIVE) {
   try { const j = JSON.parse(fs.readFileSync(realmKeysFile, "utf8")); qworkKey = j.qworkcn || j.realms?.qworkcn || null; cnKey = j.cn || j.realms?.cn || null; } catch {}
 
   const targets = [
-    // 入站 api_key 闸门（2026-10-07）：A/B 档的 /v1/models 要求带钥匙，缺头会 401
+    // 入站 api_key 闸门（2026-10-07 起，C 档 2026-10-11 补齐）：/v1/models 要求带钥匙，缺头会 401
     ["autoclaw", 18766, { "x-api-key": "autoclaw-local" }],
     ["workbuddy", 7863, { authorization: "Bearer wb-local-key" }],
-    ["trae", 18768, {}],
-    ["doubao", 18770, {}],
+    ["trae", 18768, { "x-api-key": "trae-local-key" }],
+    ["doubao", 18770, { "x-api-key": "doubao-local-key" }],
     ["comate", 18774, { "x-api-key": "comate-local" }],
     ["qoder", 8791, { authorization: `Bearer ${cnKey || "qoder-local"}` }],
     ["qwenwork", 8791, qworkKey ? { authorization: `Bearer ${qworkKey}` } : {}],

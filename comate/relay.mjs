@@ -64,6 +64,15 @@ import {
   gunzipSync, inflateSync, inflateRawSync, brotliDecompressSync,
   createGunzip, createInflate, createBrotliDecompress,
 } from "node:zlib";
+// Codex 接入用的 Responses 变换层（与 bridge/codex_front.mjs 共用，离线单测
+// 在 bridge/test_responses_transform.mjs）。路径相对本文件：开发态
+// <repo>/bridge/，打包态 resources/bridge/，两种形态都成立。
+import {
+  newResponseId, responsesToChatRequest, ResponsesSseWriter,
+  chatCompletionToResponses, compactionToResponses, streamCompactionAsResponses,
+} from "../bridge/responses_transform.mjs";
+// 上游工具词汇 → 客户端工具词汇的翻译（Codex 只有 exec_command，见该文件头注释）。
+import { findShellTool, canSynthesize, synthesizeShellCall, unavailableMessage } from "./codex_shell.mjs";
 
 // Overridable so offline tests can point the whole chain at a local fake
 // upstream (comate/test_stream.mjs); production always talks to Baidu.
@@ -100,9 +109,24 @@ const STATE_DIR = join(homedir(), ".comate-relay");
 // comate:start 起来就探活，不带钥匙）。默认开启；COMATE_RELAY_KEY="" 或
 // COMATE_INBOUND_AUTH=0 关闭（离线纯函数测试与 test_stream 用 0）。
 // 轮换：COMATE_RELAY_KEY=新钥，或 COMATE_INBOUND_KEYS=逗号追加多把并存。
+// 控制台「生成」的钥读 ~/.autoclaw-relay/inbound-keys.json（键 = 链路 id）：
+// 生成是加钥，内置钥永久兜底；生成后控制台会重启本链路把新钥吃进来，手动
+// 启动的实例重启一次同样生效（启动时读一次档案）。
+// 档案里本链路有两摊钥：扁平主钥（「生成」）与顶层保留键 _aliases 下的标准钥
+// （控制台「sk 钥」——给 dsh / Codex / OpenAI SDK 这类只认 sk- 的工具用）。
+// 两摊都是本链路的有效入站钥，这里一并吃进闸门集合；改任一处都要重启本链路。
 const INBOUND_AUTH = process.env.COMATE_INBOUND_AUTH !== "0";
+function consoleStoreKeys() {
+  try {
+    const raw = JSON.parse(readFileSync(join(homedir(), ".autoclaw-relay", "inbound-keys.json"), "utf8"));
+    const main = typeof raw?.comate === "string" ? [raw.comate] : [];
+    const aliases = Array.isArray(raw?._aliases?.comate) ? raw._aliases.comate : [];
+    return main.concat(aliases).map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean);
+  } catch { return []; }
+}
 const INBOUND_KEYS = new Set(
   ["comate-local", process.env.COMATE_RELAY_KEY || ""]
+    .concat(consoleStoreKeys())
     .concat((process.env.COMATE_INBOUND_KEYS || "").split(","))
     .map((s) => s.trim()).filter(Boolean),
 );
@@ -117,7 +141,7 @@ function inboundKeyOk(req) {
   return false;
 }
 const INBOUND_MODEL_PATHS = ["/v1/models", "/models", "/v1/messages", "/messages",
-  "/v1/chat/completions", "/chat/completions"];
+  "/v1/chat/completions", "/chat/completions", "/v1/responses", "/responses"];
 
 function log(...a) {
   console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -564,15 +588,35 @@ function reduceFrames(frames) {
 // The agent sometimes ends a turn on a control tool the caller has no handler
 // for (compress_message / task_complete / ...). The IDE kernel answers those
 // itself; we do the same, which costs one extra upstream hop (bounded to 2).
-function splitCalls(calls) {
-  const internal = calls.filter((t) => INTERNAL_TOOL_NAMES.has(canonicalToolName(t.name)));
-  const client = calls.filter((t) => !INTERNAL_TOOL_NAMES.has(canonicalToolName(t.name)));
+// A call the client cannot serve at all (no declared tool, and no shell to
+// translate into — e.g. TodoWrite against Codex) is answered here too, with a
+// message telling the agent what to use instead: leaking an unknown name made
+// Codex reject it with `unsupported call: X` and the agent give up.
+function splitCalls(calls, clientTools) {
+  const isInternal = (t) => INTERNAL_TOOL_NAMES.has(canonicalToolName(t.name))
+    || !clientCanHandle(clientTools, t.name);
+  const internal = calls.filter(isInternal);
+  const client = calls.filter((t) => !isInternal(t));
   return { internal, client, allInternal: internal.length > 0 && client.length === 0 };
 }
-function internalAnswers(calls) {
-  return calls.map((t) => ({
-    id: t.id, name: canonicalToolName(t.name), success: true, params: t.params, message: "ok",
-  }));
+
+// 客户端能不能执行这个名字：声明了同名/同 canonical 的工具，或至少能翻译成 shell。
+// 客户端压根没声明工具表（探活请求）时不拦，保持老行为。
+function clientCanHandle(clientTools, rawName) {
+  if (!clientTools?.size) return true;
+  const matched = toolNameForClient(rawName, clientTools);
+  if (clientTools.get(matched) !== undefined) return true;
+  return canSynthesize(canonicalToolName(rawName)) && !!findShellTool(clientTools);
+}
+
+function internalAnswers(calls, clientTools) {
+  return calls.map((t) => {
+    const known = INTERNAL_TOOL_NAMES.has(canonicalToolName(t.name));
+    return {
+      id: t.id, name: canonicalToolName(t.name), success: known, params: t.params,
+      message: known ? "ok" : unavailableMessage(t.name, findShellTool(clientTools)),
+    };
+  });
 }
 
 // Record where each call's result has to be delivered. Client calls: so the
@@ -594,17 +638,17 @@ function routeCalls(clientCalls, internalCalls, conversationId, taskId) {
 
 // One upstream turn, plus the relay-side answer loop for control tools the
 // client cannot execute (bounded: at most 2 extra hops per client request).
-async function runTurn({ license, conversationId, taskId, query, toolUseResults, isFirstQuery, isUserQuery, modelKey }) {
+async function runTurn({ license, conversationId, taskId, query, toolUseResults, isFirstQuery, isUserQuery, modelKey, clientTools }) {
   let out = await executeSync(license, conversationId, taskId, query, modelKey, { toolUseResults, isFirstQuery, isUserQuery });
   for (let hop = 0; hop < 2; hop++) {
-    const { internal, allInternal } = splitCalls(out.toolCalls);
+    const { internal, allInternal } = splitCalls(out.toolCalls, clientTools);
     if (!allInternal) break;
     log(`internal call answered relay-side: ${internal.map((t) => t.name).join(",")}`);
     out = await executeSync(license, conversationId, taskId, "", modelKey, {
-      toolUseResults: internalAnswers(internal), isFirstQuery: false, isUserQuery: false,
+      toolUseResults: internalAnswers(internal, clientTools), isFirstQuery: false, isUserQuery: false,
     });
   }
-  const { internal, client } = splitCalls(out.toolCalls);
+  const { internal, client } = splitCalls(out.toolCalls, clientTools);
   routeCalls(client, internal, conversationId, taskId);
   return { ...out, toolCalls: client };
 }
@@ -612,32 +656,41 @@ async function runTurn({ license, conversationId, taskId, query, toolUseResults,
 // Everything a turn needs, resolved the same way for the streaming and the
 // non-streaming path: which conversation+task to talk to, what to send, and
 // whether this is a first query (a tool continuation is not).
-async function planTurn({ messages, modelKey, pending }) {
+async function planTurn({ messages, modelKey, pending, clientTools }) {
   const license = readCredentials().license;
   const model = modelKey || "auto";
   if (pending?.results?.length) {
     // The client is answering tool calls: continue the SAME conversation+task
     // (upstream keeps the agent state; query stays empty, like the IDE).
-    const route = lookupToolRouting(pending.results.map((r) => r.id));
+    // 只认"还欠着"的结果：交错历史里会连上一批已经交付过的结果一起带回来
+    // （Codex 的历史是累积的），靠路由表判定谁还没回报。路由表里没了 = 已交付
+    // 或本进程从没发过 → 不重复上报，必要时走下面的拍平兜底。
+    const owed = pending.results.filter((r) => r.id && toolRouting.has(r.id));
+    const route = owed.length ? lookupToolRouting(owed.map((r) => r.id)) : null;
     if (route) {
-      const ids = pending.results.map((r) => r.id);
-      const results = pending.results.map((r) => {
+      const results = owed.map((r) => {
         const e = toolRouting.get(r.id);
         return {
           id: r.id,
-          name: canonicalToolName(r.name) || e?.name || "",
+          // 路由表里存的是上游自己的名字。Codex 这类客户端回报时带的是客户端名字
+          // （exec_command），必须先让上游认回自己的词（write_file）。
+          name: e?.name || canonicalToolName(r.name) || "tool",
           success: r.isError ? false : true,
           params: r.params || e?.params || {},
           message: String(r.text ?? ""),
         };
       });
-      const internal = ids.map((id) => toolRouting.get(id)).filter((e) => e?.internalResult).map((e) => e.internalResult);
-      forgetToolRouting(ids);
-      const all = [...results, ...internal];
+      // 同一批里 relay 自答过的工具（compress_message…）也要一起交回：它们没经过
+      // 客户端，只挂在路由表上，不捎上就是上游永远等它。
+      const internal = [...toolRouting.entries()]
+        .filter(([, e]) => e.internal && e.conversationId === route.conversationId && e.taskId === route.taskId)
+        .map(([id, e]) => [id, e.internalResult]);
+      forgetToolRouting([...owed.map((r) => r.id), ...internal.map(([id]) => id)]);
+      const all = [...results, ...internal.map(([, res]) => res)];
       log(`tool-loop continue conv=${route.conversationId} task=${route.taskId} results=${all.length} (${all.map((r) => r.name).join(",")})`);
       return {
         license, model, modelKey: model, conversationId: route.conversationId, taskId: route.taskId,
-        query: "", toolUseResults: all, isFirstQuery: false, isUserQuery: false,
+        query: "", toolUseResults: all, isFirstQuery: false, isUserQuery: false, clientTools,
       };
     }
     log(`tool-loop miss for [${pending.results.map((r) => r.id).join(",")}] — cache expired or relay restarted, flattening instead`);
@@ -647,7 +700,7 @@ async function planTurn({ messages, modelKey, pending }) {
   const taskId = await createTask(license, conversationId, trace);
   return {
     license, model, modelKey: model, conversationId, taskId,
-    query: flattenQuery(messages), toolUseResults: [], isFirstQuery: true, isUserQuery: true,
+    query: flattenQuery(messages), toolUseResults: [], isFirstQuery: true, isUserQuery: true, clientTools,
   };
 }
 
@@ -671,21 +724,21 @@ async function* streamTurn(plan, { registerAbort } = {}) {
     total.usage = state.usage || total.usage;
     total.rollbackMessageId = state.rollbackMessageId || total.rollbackMessageId;
     calls = [...state.toolMap.values()].filter((t) => t.name);
-    const { internal, allInternal } = splitCalls(calls);
+    const { internal, allInternal } = splitCalls(calls, plan.clientTools);
     if (!allInternal || hop === 2) break;
     log(`internal call answered relay-side: ${internal.map((t) => t.name).join(",")}`);
-    query = ""; toolUseResults = internalAnswers(internal);
+    query = ""; toolUseResults = internalAnswers(internal, plan.clientTools);
     isFirstQuery = false; isUserQuery = false;
   }
-  const { internal, client } = splitCalls(calls);
+  const { internal, client } = splitCalls(calls, plan.clientTools);
   routeCalls(client, internal, plan.conversationId, plan.taskId);
   log(`chat(stream) model=${plan.model} conv=${plan.conversationId} task=${plan.taskId} chars=${total.text.length} think=${total.reasoning.length} tools=${client.length}${client.length ? " [" + client.map((t) => t.name).join(",") + "]" : ""}`);
   yield { type: "tool_calls", calls: client };
   yield { type: "done", usage: total.usage, text: total.text, reasoning: total.reasoning };
 }
 
-async function comateChat({ messages, modelKey, pending }) {
-  const plan = await planTurn({ messages, modelKey, pending });
+async function comateChat({ messages, modelKey, pending, clientTools }) {
+  const plan = await planTurn({ messages, modelKey, pending, clientTools });
   const out = await runTurn(plan);
   log(`chat model=${plan.model} conv=${plan.conversationId} task=${plan.taskId} chars=${out.text.length} tools=${out.toolCalls.length}${out.toolCalls.length ? " [" + out.toolCalls.map((t) => t.name).join(",") + "]" : ""}`);
   return out;
@@ -757,16 +810,21 @@ function normalizeAnthropicMessages(body) {
   return out;
 }
 
-// A request is a tool continuation iff it ENDS with tool results (the batch
-// the client just executed for the assistant turn right before them).
+// A request is a tool continuation iff it ENDS with tool results. Scan back over
+// the whole trailing block, not just the last pair: Codex 的历史会把一组调用渲染成
+// assistant(tool_calls a,b) + tool(a) + tool(b)，交错回报时则是成对的
+// assistant(a)+tool(a)+assistant(b)+tool(b)。只在第一条 assistant 上停会把除最后
+// 一条以外的结果全丢掉——上游收到的信号是"那件事没做成"，于是重做或改计划。
 function extractPending(msgs) {
   const results = [];
+  let calls = [];
   for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i]?.toolResult) { results.unshift(msgs[i].toolResult); continue; }
+    const m = msgs[i];
+    if (m?.toolResult) { results.unshift(m.toolResult); continue; }
+    if (m?.toolCalls?.length) { calls = [...m.toolCalls, ...calls]; continue; }
     break;
   }
   if (!results.length) return null;
-  const calls = msgs[msgs.length - results.length - 1]?.toolCalls || [];
   return { results, calls };
 }
 
@@ -930,6 +988,16 @@ function toolNameForClient(rawName, clientTools) {
 function clientToolCall(c, clientTools) {
   const name = toolNameForClient(c.name, clientTools);
   const props = clientTools?.get?.(name);
+  if (props === undefined) {
+    // 客户端没有同名工具：Codex 这类只有 exec_command 的客户端，把上游调用翻译成
+    // 一条 shell 命令（见 comate/codex_shell.mjs）。翻不了的在 splitCalls 那边就被
+    // 归到 relay 自答，不会走到这里。
+    const synth = synthesizeShellCall(
+      { id: c.id, name: c.name, canon: canonicalToolName(c.name), params: c.params },
+      findShellTool(clientTools),
+    );
+    if (synth) return synth;
+  }
   if (!props) return { id: c.id, name, params: c.params || {} };
   const kept = {};
   for (const [k, v] of Object.entries(c.params || {})) if (props.has(k)) kept[k] = v;
@@ -953,6 +1021,83 @@ function splitChunks(text, n = 24) {
   const out = [];
   for (let i = 0; i < text.length; i += size) out.push(text.slice(i, i + size));
   return out;
+}
+
+// ------------------------------------------------------------------ Responses API (Codex)
+// Codex CLI 的 wire_api 只认 "responses"（官方文档原话：responses is the only
+// supported value），所以这里把 /v1/responses 翻译到 relay 已有的 turn 流水线：
+// 请求经共享变换层转成 chat messages（与 /v1/chat/completions 完全同一条
+// normalizeOpenAIMessages → planTurn → turnEvents 链，工具续跑/配额语义都复用），
+// 响应再翻译回 Responses SSE 事件。变换层在 ../bridge/responses_transform.mjs。
+//
+// 与 chat 路径的两处刻意差异：
+//   - 工具调用名要经 clientToolCall 过滤（上游可能带回客户端 schema 之外的字段，
+//     直接塞进 function_call.arguments 会让 Codex 的工具调用失败）
+//   - 完成态没有 finish_reason 可用（上游不给），一律按 completed 收口
+async function handleResponses(res, payload) {
+  const { chat, meta } = responsesToChatRequest(payload, { defaultMaxTokens: 8192 });
+  const model = resolveComateModel(chat.model);
+  const msgs = normalizeOpenAIMessages(chat.messages);
+  const clientTools = clientToolIndex(chat.tools, "openai");
+  const pending = extractPending(msgs);
+  const responseId = newResponseId();
+
+  if (!payload.stream) {
+    const out = await comateChat({ messages: msgs, modelKey: model, pending, clientTools });
+    const body = meta.compaction
+      ? compactionToResponses({ text: out.text, usage: out.usage, model, responseId })
+      : chatCompletionToResponses({
+          choices: [{
+            message: {
+              content: out.text,
+              reasoning_content: out.reasoning || "",
+              tool_calls: clientToolCalls(out, clientTools).map((c) => ({
+                id: c.id, type: "function",
+                function: { name: c.name, arguments: JSON.stringify(c.params) },
+              })),
+            },
+            finish_reason: out.toolCalls.length ? "tool_calls" : "stop",
+          }],
+          usage: out.usage,
+        }, { model, responseId, toolContext: meta.toolContext });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body));
+    log(`POST /responses model=${model} stream=0 chars=${out.text.length} tools=${out.toolCalls.length}${meta.compaction ? " compaction" : ""}`);
+    return;
+  }
+
+  res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+  const stopBeat = startHeartbeat(res, ": ping\n\n");
+  try {
+    const plan = await planTurn({ messages: msgs, modelKey: model, pending, clientTools });
+    if (meta.compaction) {
+      // 压缩回放必须恰好一个 compaction 条目，不能边流边发：先聚合再一次性写出
+      let text = "", usage = null;
+      for await (const ev of turnEvents(plan, { registerAbort: bindAbort(res) })) {
+        if (ev.type === "text") text += ev.text;
+        else if (ev.type === "done") usage = ev.usage;
+      }
+      stopBeat();
+      streamCompactionAsResponses(res, { text, usage, model, responseId });
+      writeSse(res, "data: [DONE]\n\n");
+      res.end();
+      log(`POST /responses model=${model} stream=1 compaction chars=${text.length}`);
+      return;
+    }
+    const w = new ResponsesSseWriter(res, { model, responseId, toolContext: meta.toolContext });
+    for await (const ev of turnEvents(plan, { registerAbort: bindAbort(res) })) {
+      // clientToolCalls 吃的是 runTurn 形状（{toolCalls}），turnEvents 给的是数组
+      if (ev.type === "tool_calls") w.toolCalls(clientToolCalls({ toolCalls: ev.calls || [] }, clientTools));
+      else if (ev.type === "done") w.emit({ type: "done", usage: ev.usage });
+      else w.emit(ev);
+    }
+    stopBeat();
+    const final = w.finalize();
+    writeSse(res, "data: [DONE]\n\n");
+    res.end();
+    const itemTypes = final.output.map((o) => o.type).join(",");
+    log(`POST /responses model=${model} stream=1 items=[${itemTypes}] tools=${final.output.filter((o) => o.type.includes("call")).length}`);
+  } finally { stopBeat(); }
 }
 
 // --------------------------------------------------------------------- server
@@ -1006,11 +1151,11 @@ const server = createServer(async (req, res) => {
       if (payload.stream) {
         await anthropicStream(res, {
           model, clientTools, registerAbort: bindAbort(res),
-          plan: await planTurn({ messages: msgs, modelKey: model, pending }),
+          plan: await planTurn({ messages: msgs, modelKey: model, pending, clientTools }),
         });
         return;
       }
-      const out = await comateChat({ messages: msgs, modelKey: model, pending });
+      const out = await comateChat({ messages: msgs, modelKey: model, pending, clientTools });
       const outTokens = out.usage?.output_tokens || Math.ceil(out.text.length / 4);
       const stopReason = out.toolCalls.length ? "tool_use" : "end_turn";
       const content = [];
@@ -1037,11 +1182,11 @@ const server = createServer(async (req, res) => {
       if (payload.stream) {
         await openaiStream(res, {
           model, clientTools, registerAbort: bindAbort(res),
-          plan: await planTurn({ messages: msgs, modelKey: model, pending }),
+          plan: await planTurn({ messages: msgs, modelKey: model, pending, clientTools }),
         });
         return;
       }
-      const out = await comateChat({ messages: msgs, modelKey: model, pending });
+      const out = await comateChat({ messages: msgs, modelKey: model, pending, clientTools });
       const usage = {
         prompt_tokens: out.usage?.input_tokens || 0,
         completion_tokens: out.usage?.output_tokens || Math.ceil(out.text.length / 4),
@@ -1060,6 +1205,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (p === "/v1/responses" || p === "/responses") {
+      await handleResponses(res, payload);
+      return;
+    }
+
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: { message: `no route ${p}` } }));
   } catch (e) {
@@ -1070,7 +1220,19 @@ const server = createServer(async (req, res) => {
       : /license|login-name|unauthor|forbidden|credential/i.test(e.message) ? 401 : 502;
     if (res.headersSent) {
       // Streaming already started: end it in a shape the client can parse.
-      if (p.includes("chat/completions")) writeSse(res, `data: ${JSON.stringify({ error: { message: `comate-relay: ${e.message}` } })}\n\ndata: [DONE]\n\n`);
+      if (p.includes("/responses")) {
+        // Codex 只认 Responses 形状的失败帧（chat 形状的 error 帧它读不懂）
+        writeSse(res, `event: response.failed\ndata: ${JSON.stringify({
+          type: "response.failed",
+          response: {
+            id: "resp_error", object: "response", created_at: Math.floor(Date.now() / 1000),
+            status: "failed", model: null, output: [],
+            error: { message: `comate-relay: ${e.message}`, type: "upstream_error" },
+          },
+        })}\n\ndata: [DONE]\n\n`);
+      } else if (p.includes("chat/completions")) {
+        writeSse(res, `data: ${JSON.stringify({ error: { message: `comate-relay: ${e.message}` } })}\n\ndata: [DONE]\n\n`);
+      }
       try { res.end(); } catch {}
       return;
     }

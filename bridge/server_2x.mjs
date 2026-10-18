@@ -50,10 +50,25 @@ const MODEL_CONFIG_URL = "https://autoglm-api.autoglm.ai/autoclaw-proxy/proxy/au
 // 健康探针 /health、业务桥 /fwd、管理 /admin/* 不在闸门内（桌面端与 GUI 后端零改动）。
 // 默认开启；设 AUTOCLAW_INBOUND_AUTH=0 退回旧行为（离线纯函数测试用）。
 // 钥匙集合 = 内置 autoclaw-local（= ZCode 注册值）+ PROXY_TOKEN（兼容 dsh 经
-// 192.168.65.254 的 Bearer）+ AUTOCLAW_INBOUND_KEYS 逗号追加（轮换/多把）。
+// 192.168.65.254 的 Bearer）+ AUTOCLAW_INBOUND_KEYS 逗号追加（轮换/多把）
+// + 控制台「生成」的钥（~/.autoclaw-relay/inbound-keys.json，键 = 链路 id；
+// 生成是加钥不废旧，生成后控制台会重启 relay 把新钥吃进来，手动启动的实例
+// 重启一次同样生效——本文件部署在 ~/.autoclaw-relay/，档案就在同目录）。
+// 档案里本链路有两摊钥：扁平主钥（「生成」）与顶层保留键 _aliases 下的标准钥
+// （控制台「sk 钥」——给 dsh / Codex / OpenAI SDK 这类只认 sk- 的工具用）。
+// 两摊都是本链路的有效入站钥，这里一并吃进闸门集合；改任一处都要重启本链路。
 const INBOUND_AUTH = process.env.AUTOCLAW_INBOUND_AUTH !== "0";
+function consoleStoreKeys() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".autoclaw-relay", "inbound-keys.json"), "utf8"));
+    const main = typeof raw?.autoclaw === "string" ? [raw.autoclaw] : [];
+    const aliases = Array.isArray(raw?._aliases?.autoclaw) ? raw._aliases.autoclaw : [];
+    return main.concat(aliases).map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean);
+  } catch { return []; }
+}
 const INBOUND_KEYS = new Set(
   ["autoclaw-local", PROXY_TOKEN]
+    .concat(consoleStoreKeys())
     .concat((process.env.AUTOCLAW_INBOUND_KEYS || "").split(","))
     .map((s) => s.trim()).filter(Boolean),
 );
