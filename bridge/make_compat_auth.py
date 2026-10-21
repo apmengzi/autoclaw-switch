@@ -25,6 +25,15 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+def _read_device_id(user_data: Path) -> str:
+    """2.x 把设备指纹单独放在 <userData>/device/device-id.json。"""
+    p = user_data / "device" / "device-id.json"
+    try:
+        return str(json.loads(p.read_text(encoding="utf-8")).get("deviceId") or "")
+    except Exception:
+        return ""
+
+
 def main():
     key = m._os_crypt_key(SRC)  # DPAPI unprotect, 仅本机当前用户可解
     print("os_crypt key recovered:", key[:4].hex(), "... len", len(key))
@@ -61,7 +70,12 @@ def main():
         auth = {
             "token": cred.get("token") or cred.get("accessToken"),
             "refreshToken": cred.get("refreshToken"),
-            "deviceId": cred.get("deviceId") or "",
+            # 2.x 的 account-credentials.enc 里没有 deviceId（只有 accessToken /
+            # refreshToken / revision / updatedAt），设备指纹单独存在
+            # <userData>/device/device-id.json。取错地方会写空串，随后
+            # POST /userapi/v1/refresh 报 400000「用户未登录」——该 lane 的号在
+            # 池子里看着"票还新鲜"，却永远刷不出可用票，表现为 chat 一直失败。
+            "deviceId": cred.get("deviceId") or _read_device_id(SRC),
             "userInfo": ui,
         }
         assert auth["token"], "no token field found in decrypted credentials"
