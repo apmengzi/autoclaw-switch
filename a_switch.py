@@ -33,6 +33,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -2995,6 +2996,17 @@ def _account_warm_state(acc) -> dict:
 def _account_warmed(acc) -> bool:
     st = _account_warm_state(acc)
     if st.get("warmed") is True:
+        # 时效判据用**服务端真实推理流水**，不是"多久前暖过"：
+        # 一直有真实用量的老号（哪怕 20 天前暖过）是活号，该留在池里；
+        # 暖过之后长期零流水的号才真的变冷、需要重暖。
+        # 流水拉取失败（-1=未知）时不因时效误杀，保守放行。
+        try:
+            n = real_inference_count(acc, pages=1)
+        except Exception:
+            n = -1
+        if n == 0:
+            log(f"暖号后仍零推理流水，视为已冷、需重暖：{getattr(acc, 'nickname', '')}")
+            return False
         return True
     # 无 warm_state.json = 改造前已存在的存量活号（新号入库时会被 login_and_add_account
     # 显式写 warmed=false）。存量号无文件即视为已暖、直接放行，避免把唯一活号挡在池外。
@@ -4422,9 +4434,11 @@ def warm_unwarmed_accounts(rounds: int = 8) -> dict:
     node = find_node_exe()
     if not node:
         return {"ok": False, "error": "找不到 node.exe"}
-    src_dir = _relay_source_dir() / "warm"
+    src_dir = _relay_source_dir()
     home = relay_home()
     (home / "warm").mkdir(parents=True, exist_ok=True)
+    # 注意：src_dir 已是 relay/ 根，warm 子目录由这里拼（此前多拼了一层 warm/ 导致
+    # FileNotFoundError，暖号功能整体不可用）
     shutil.copy2(src_dir / "warm" / "warm_account.mjs", home / "warm" / "warm_account.mjs")
     results = []
     for acc in discover_accounts():
@@ -4446,7 +4460,21 @@ def warm_unwarmed_accounts(rounds: int = 8) -> dict:
         p = subprocess.run([str(node), str(home / "warm" / "warm_account.mjs"), tokf.name, str(rounds)],
                            capture_output=True, text=True, timeout=1800, cwd=str(home / "warm"),
                            creationflags=flags)
-        results.append({"uid": str(acc.user_id)[:8], "name": acc.nickname, "tail": (p.stdout or "")[-200:]})
+        out = (p.stdout or "")
+        # 解析服务端流水判定（唯一可信判据：来自上游 ledgers_std，本地改不了）
+        m = re.search(r"RATIO\s+(\d+)/(\d+)\s*=\s*(\d+)%", out)
+        ok = False
+        if m:
+            human, total, pct = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            ok = pct >= 50 and total >= 3
+            if ok:
+                # 达标 → 自动放行入池（此前漏了这一步：脚本跑了但标记不置位，
+                # 新号永远卡在 warmed=false 进不了池）
+                account_mark_warmed(acc, round(human / total, 3) if total else 0.0)
+                log(f"暖号达标 {acc.nickname}: {human}/{total}={pct}% → 已放行入池")
+        results.append({"uid": str(acc.user_id)[:8], "name": acc.nickname,
+                        "ratio": f"{m.group(1)}/{m.group(2)}={m.group(3)}%" if m else "?",
+                        "warmed": ok, "tail": out[-200:]})
         try:
             tokf.unlink()
         except Exception:
