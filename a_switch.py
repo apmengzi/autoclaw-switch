@@ -2996,17 +2996,12 @@ def _account_warm_state(acc) -> dict:
 def _account_warmed(acc) -> bool:
     st = _account_warm_state(acc)
     if st.get("warmed") is True:
-        # 时效判据用**服务端真实推理流水**，不是"多久前暖过"：
-        # 一直有真实用量的老号（哪怕 20 天前暖过）是活号，该留在池里；
-        # 暖过之后长期零流水的号才真的变冷、需要重暖。
-        # 流水拉取失败（-1=未知）时不因时效误杀，保守放行。
-        try:
-            n = real_inference_count(acc, pages=1)
-        except Exception:
-            n = -1
-        if n == 0:
-            log(f"暖号后仍零推理流水，视为已冷、需重暖：{getattr(acc, 'nickname', '')}")
-            return False
+        # 时效判据原本想用"服务端真实推理流水"，但实测有坑（11:13 事故）：
+        # 暖号刚达标时流水可能还没在 ledgers_std 可见（服务端聚合延迟），
+        # 或拉取瞬时限流返回空 → 误判"零流水已冷"，把刚暖好的号反复重暖
+        # （trialforinvitation 11/11、spellhard 4/4 达标后立刻被误杀回 warmed 队列）。
+        # 定案：warm 标记即放行。冷号识别不靠这里——warm_unwarmed_accounts 只挑
+        # warmed=false 的号，不会重复打已暖号；真冷号由用户手动重暖兜底。
         return True
     # 无 warm_state.json = 改造前已存在的存量活号（新号入库时会被 login_and_add_account
     # 显式写 warmed=false）。存量号无文件即视为已暖、直接放行，避免把唯一活号挡在池外。
