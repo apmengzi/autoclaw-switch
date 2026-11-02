@@ -6,6 +6,9 @@ a = Analysis(
     ['a_switch_app.py'],
     pathex=[],
     binaries=[],
+    # relay/ 必须打进包：relay/server.mjs（反代网关）+ relay/warm/warm_account.mjs（暖号脚本）
+    # 都在里面。datas=[] 时 frozen 模式 _relay_source_dir() 指向 _MEIPASS/relay 找不到文件，
+    # 表现为"部署反代失败"和"暖号一进来就 FileNotFoundError"。
     datas=[('relay', 'relay')],
     hiddenimports=[],
     hookspath=[],

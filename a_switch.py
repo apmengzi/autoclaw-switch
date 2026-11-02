@@ -3383,9 +3383,24 @@ def login_and_add_account(timeout: int = 300, on_progress=None) -> dict:
                                     first_login=is_new_archive)
         if invite_proof:
             diag["invite"] = invite_proof
+        # 新号自动暖号：加完即建真人形基线、达标自动入池（不再需要手动点按钮）。
+        # 轮数 4 足够——RATIO 判据只要 ≥3 条流水、真人形占比 ≥50%。
+        warm_result = None
+        if is_new_archive:
+            try:
+                report("开始自动暖号（4 轮真实对话，约 2 分钟）…")
+                wr = warm_unwarmed_accounts(rounds=4)
+                for x in (wr.get("results") or []):
+                    if str(x.get("uid")) == str(uid)[:8]:
+                        warm_result = x
+                        report(f"暖号结果：{x.get('ratio')} → "
+                               + ("✅ 已放行入池" if x.get("warmed") else "⚠ 未达标，可稍后手动补暖"))
+                        break
+            except Exception as e:
+                report(f"⚠ 自动暖号异常（不影响入库，可手动补暖）：{type(e).__name__}: {e}")
         return {"ok": True, "uid": str(uid), "name": str(name or uid), "error": None,
                 "shared_device": shared_device, "diagnosis": diag,
-                "invite_bound": invite_proof}
+                "invite_bound": invite_proof, "warm": warm_result}
     except Exception as e:
         return {"ok": False, "uid": None, "name": None,
                 "error": f"{type(e).__name__}: {e}"}
@@ -3946,6 +3961,49 @@ def cmd_probe(accounts: list):
             print(f"  [预告] {u['name']}  {u['start_text']} ~ {u['end_text']}")
 
 
+
+
+# access token 实测约 24h 过期（登录当天签发，次日同时刻失效）。到期后号在池里
+# 就是死的（推理 401/410000、流水查不到 → 被暖号逻辑误判成"冷号"）。
+# 续期窗口：过期前 6h 内才刷，太早刷没意义（且 refreshToken 每次轮换，无谓刷新
+# 只会加速把存档里的凭证用旧）。
+TOKEN_REFRESH_LEAD_S = int(os.environ.get("ASWITCH_TOKEN_REFRESH_LEAD_S", str(6 * 3600)))
+
+
+def refresh_expiring_accounts(force: bool = False) -> dict:
+    """批量续期临期/过期的账号凭证（除活动目录那个，App 自己会续）。
+
+    返回 {'ok':True,'refreshed':[名字],'failed':[{name,msg}],'skipped':[...]}
+    """
+    refreshed, failed, skipped = [], [], []
+    for acc in discover_accounts():
+        # 活动目录账号由 App 每小时自续，我们插手会把 refreshToken 打旧、把 App 顶下线
+        if getattr(acc, "is_live", False):
+            skipped.append(f"{acc.nickname}(活动目录,App自续)")
+            continue
+        if not acc.refresh_token:
+            failed.append({"name": acc.nickname, "msg": "无 refreshToken，需重新登录"})
+            continue
+        exp = acc.access_expires_at()
+        left = (exp - time.time()) if exp else -1
+        if not force and left > TOKEN_REFRESH_LEAD_S:
+            skipped.append(f"{acc.nickname}(剩{left / 3600:.1f}h)")
+            continue
+        try:
+            ok = acc.refresh_access_token()
+        except Exception as e:
+            ok = False
+            log(f"{acc.nickname} 续期异常：{type(e).__name__} {e}")
+        if ok:
+            refreshed.append(acc.nickname)
+        else:
+            failed.append({"name": acc.nickname, "msg": "续期失败（凭证被轮换或账号已停用，需重新登录）"})
+    if refreshed:
+        log(f"已续期 {len(refreshed)} 个账号：{', '.join(refreshed)}")
+    return {"ok": not failed, "refreshed": refreshed, "failed": failed, "skipped": skipped}
+
+
+
 def main(argv):
     cmd = (argv[1] if len(argv) > 1 else "list").lower()
     def _log_diag(r: dict):
@@ -3983,6 +4041,22 @@ def main(argv):
         cmd_list(accounts)
     elif cmd == "pool":
         return cmd_pool(accounts)
+    elif cmd == "refresh-tokens":
+        # token 约 24h 过期；到期后号在池里就是死的（推理 401、流水查不到）。
+        # 供 pool_keeper 每轮巡检调用。--force 强制全部续期（调试用）。
+        # 注：refresh_expiring_accounts 定义在本文件靠后（暖号区块之后），
+        # 用 globals() 延迟解析，避免"定义还没执行到"的 NameError。
+        fn = globals().get("refresh_expiring_accounts")
+        if not fn:
+            log("✗ refresh_expiring_accounts 未定义（版本不匹配）")
+            return 1
+        r = fn(force=("--force" in argv))
+        log(f"token 续期：成功 {len(r['refreshed'])}"
+            f"（{', '.join(r['refreshed']) or '无'}）｜"
+            f"失败 {len(r['failed'])}｜跳过 {len(r['skipped'])}")
+        for f in r["failed"]:
+            log(f"  ✗ {f['name']}: {f['msg']}")
+        return 0 if not r["failed"] else 1
     elif cmd == "probe":
         cmd_probe(accounts)
     elif cmd == "claim":
